@@ -1,5 +1,0 @@
-openai:
-  api_key: 'Your OpenAI-Key'
-
-chatglm:
-  api_key: 'Your GLM-Key'
