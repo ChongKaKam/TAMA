@@ -4,6 +4,8 @@ api_keys.yaml
 demo.py
 test.py
 MakeDataset.py
+output
+data
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

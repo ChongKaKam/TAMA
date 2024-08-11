@@ -1,4 +1,4 @@
-# TimeLLM
+# VisualTimeSeries
 
 ## Get started
 
