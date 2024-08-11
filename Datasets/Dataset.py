@@ -239,7 +239,7 @@ class RawDataset:
                 else:
                     num_dim = window_data.shape[1]
                 for j in range(num_dim):
-                    label_array.append(window_label)
+                    label_array.append(window_label[:, j])
             label_array = np.array(label_array)
             np.save(label_save_path, label_array)
         # background
@@ -302,6 +302,17 @@ class ProcessedDataset:
             index -= self.id_data_num[id]
         raise IndexError(f"Index {index} out of range")
 
+    def get_label_by_id_index(self, id, index):
+        label_path = os.path.join(self.dataset_path, id, 'test', 'labels.npy')
+        labels = np.load(label_path)
+        return labels[index]
+    
+    def get_label_by_index(self, index):
+        for id in self.id_list:
+            if index < self.id_data_num[id]:
+                return self.get_label_by_id_index(id, index)
+            index -= self.id_data_num[id]
+        raise IndexError(f"Index {index} out of range")
 
 
 if __name__ == '__main__':
