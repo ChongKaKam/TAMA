@@ -211,7 +211,8 @@ class RawDataset:
         convertor_save_path = os.path.join(dataset_output_dir, id, mode, convertor_class.output_type)
         self.ensure_dir(convertor_save_path)
         convertor = convertor_class(save_path=convertor_save_path)
-
+        raw_data_save_path = os.path.join(dataset_output_dir, id, mode, 'data.npy')
+        raw_data_array = []
         cnt = 0
         for i in range(0, len(data)-window_length, stride):
             window_data = data[i:i+window_length]
@@ -221,7 +222,10 @@ class RawDataset:
                 num_dim = window_data.shape[1]
             for j in range(num_dim):
                 convertor.convert_and_save(window_data[:, j], cnt)
+                raw_data_array.append(window_data[:, j])
                 cnt += 1
+        raw_data_array = np.array(raw_data_array)
+        np.save(raw_data_save_path, raw_data_array)
 
         label_save_path = os.path.join(dataset_output_dir, id, mode, 'labels.npy')
         if mode == 'test' and not os.path.exists(label_save_path):
