@@ -29,8 +29,8 @@ class Chat_GPT4o_Structured(BigModelBase):
     class StructuredModel(BaseModel):
         # trend: str = Field(description="The trend of the time series")
         # seasonality: str = Field(description="The seasonality of the time series")
-        abnormal_index: str = Field(description="The abnormality index of the time series. If there is no abnormality, you can say 'No abnormality'")
-        abnormal_type: str = Field(description="The abnormality type of the time series, choose from [none, amplitude, frequency]")
+        abnormal_index: str = Field(description="The abnormality index of the time series. the output format should be like '[index1, index2, index3, ...]', if there is no abnormality, you can say '[]'")
+        abnormal_type: str = Field(description="The abnormality type of the time series, choose from [none, shapelet, seasonal, trend].")
         abnormal_description: str = Field(description="Make a brief description of the abnormality, why do you think it is abnormal?")
 
     def __init__(self, max_tokens=1200, temperature=0.1, top_p=0.5):
