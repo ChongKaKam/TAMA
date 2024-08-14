@@ -116,10 +116,13 @@ class ImageConvertor(ConvertorBase):
     output_type = 'image'
     def __init__(self, save_path:str):
         super().__init__(save_path)
-        self.width = 600
-        self.height = 400
+        self.width = 2400
+        self.height = 320
         self.dpi = 100
+        self.x_ticks = 5
+        self.aux_enable = True
         self.line_color = 'blue'
+        plt.rcParams.update({'font.size': 6})
         # convert to inches
         self.figsize = (self.width/self.dpi, self.height/self.dpi)
 
@@ -131,12 +134,15 @@ class ImageConvertor(ConvertorBase):
             data_checked = data.reshape(-1)
         # new figure
         fig, ax = plt.subplots(figsize=self.figsize, dpi=self.dpi)
+        # auxiliary line
+        if self.aux_enable:
+            for x in range(0, len(data_checked)+1, self.x_ticks):
+                ax.axvline(x=x, color='lightgray', linestyle='--', linewidth=0.5)
         ax.plot(data_checked, color=self.line_color)
-        plt.xlabel('Time')
-        plt.ylabel('Value')
-        plt.title('Time Series Data')
-        # save the figure
-        fig.savefig(os.path.join(self.save_path, f"{idx}.png"))
+        ax.set_xticks(range(0, len(data_checked)+1, self.x_ticks))
+        ax.set_xlim(0, len(data_checked)+1)
+        fig.tight_layout(pad=0)
+        fig.savefig(os.path.join(self.save_path, f"{idx}.png"), bbox_inches='tight')
         plt.close()
 
     def load(self, idx:int):
@@ -228,7 +234,7 @@ class RawDataset:
         np.save(raw_data_save_path, raw_data_array)
 
         label_save_path = os.path.join(dataset_output_dir, id, mode, 'labels.npy')
-        if mode == 'test' and not os.path.exists(label_save_path):
+        if mode == 'test':
             if id == 'data':
                 labels_path = os.path.join(self.dataset_info['path'], f"labels.npy")
             else:
