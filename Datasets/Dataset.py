@@ -1,5 +1,6 @@
 import yaml
 import os
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -116,13 +117,22 @@ class ImageConvertor(ConvertorBase):
     output_type = 'image'
     def __init__(self, save_path:str):
         super().__init__(save_path)
-        self.width = 2400
+        self.width = 1500
         self.height = 320
         self.dpi = 100
-        self.x_ticks = 5
+        self.x_ticks = 100
         self.aux_enable = True
         self.line_color = 'blue'
         plt.rcParams.update({'font.size': 6})
+        # convert to inches
+        self.figsize = (self.width/self.dpi, self.height/self.dpi)
+
+    def image_config(self, width:int, height:int, dpi:int, x_ticks:int, aux_enable:bool):
+        self.width = width
+        self.height = height
+        self.dpi = dpi
+        self.x_ticks = x_ticks
+        self.aux_enable = aux_enable
         # convert to inches
         self.figsize = (self.width/self.dpi, self.height/self.dpi)
 
@@ -204,7 +214,7 @@ class RawDataset:
         std = np.std(data)
         return (data - mean) / std
 
-    def make(self, dataset_output_dir, id, mode, window_length, stride, convertor_class):
+    def make(self, dataset_output_dir, id, mode, window_length, stride, convertor_class, image_config:dict={}):
         if id == 'data':
             data_path = os.path.join(self.dataset_info['path'], f"{mode}.npy")
         else:
@@ -217,18 +227,24 @@ class RawDataset:
         convertor_save_path = os.path.join(dataset_output_dir, id, mode, convertor_class.output_type)
         self.ensure_dir(convertor_save_path)
         convertor = convertor_class(save_path=convertor_save_path)
+        if image_config != {}:
+            convertor.image_config(**image_config)
         raw_data_save_path = os.path.join(dataset_output_dir, id, mode, 'data.npy')
         raw_data_array = []
         cnt = 0
-        for i in range(0, len(data)-window_length, stride):
-            window_data = data[i:i+window_length]
+        num_stride = (len(data)-window_length) // stride + 1
+        # print(len(data), window_length, stride, num_stride);exit()
+        for i in range(num_stride):
+            start = i * stride
+            window_data = data[start:start+window_length]
             if len(window_data.shape) == 1:
-                num_dim = 1
+                channel = 1
             else:
-                num_dim = window_data.shape[1]
-            for j in range(num_dim):
-                convertor.convert_and_save(window_data[:, j], cnt)
-                raw_data_array.append(window_data[:, j])
+                channel = window_data.shape[1]
+            for ch in range(channel):
+                convertor.convert_and_save(window_data[:, ch], cnt)
+                raw_data_array.append(window_data[:, ch])
+                # print(window_data[:, ch].shape)
                 cnt += 1
         raw_data_array = np.array(raw_data_array)
         np.save(raw_data_save_path, raw_data_array)
@@ -242,14 +258,15 @@ class RawDataset:
             labels = np.load(labels_path)
             labels = self.sampling(labels)
             label_array = []
-            for i in range(0, len(data)-window_length, stride):
-                window_label = labels[i:i+window_length]
+            for i in range(num_stride):
+                start = i * stride
+                window_label = labels[start:start+window_length]
                 if len(window_data.shape) == 1:
-                    num_dim = 1
+                    channel = 1
                 else:
-                    num_dim = window_data.shape[1]
-                for j in range(num_dim):
-                    label_array.append(window_label[:, j])
+                    channel = window_data.shape[1]
+                for ch in range(channel):
+                    label_array.append(window_label[:, ch])
             label_array = np.array(label_array)
             np.save(label_save_path, label_array)
         # background
@@ -259,11 +276,11 @@ class RawDataset:
     '''
     output directory: "output_dir/dataset_name/id/name/convertor_type"
     '''
-    def convert_data(self, output_dir:str, mode:str, window_length:int, stride:int, convertor_class:ConvertorBase):
+    def convert_data(self, output_dir:str, mode:str, window_length:int, stride:int, convertor_class:ConvertorBase, image_config:dict={}):
         dataset_output_dir = os.path.join(output_dir, self.dataset_name)
         self.ensure_dir(dataset_output_dir)
         for id in self.dataset_info['file_list']:
-            self.make(dataset_output_dir, id, mode, window_length, stride, convertor_class)
+            self.make(dataset_output_dir, id, mode, window_length, stride, convertor_class, image_config=image_config)
 '''
 Proccessed Data Loader
 '''
@@ -294,10 +311,16 @@ class ProcessedDataset:
                 if not os.path.exists(label_path):
                     raise FileNotFoundError(f"Labels not found in {label_path}")
                 labels = np.load(label_path)
+                # print(label_path);print(labels.shape);exit()
                 self.data_num += int(labels.shape[0])
                 self.id_data_num[id] = int(labels.shape[0])
         return self.data_num
     
+    def get_id_data_num(self):
+        if not hasattr(self, 'id_data_num'):
+            self.get_data_num()
+        return self.id_data_num
+
     def get_data_by_id_index(self, id, index):
         data_dir = os.path.join(self.dataset_path, id, self.mode)
         image_path = os.path.join(data_dir, 'image', f"{index}.png")
@@ -323,10 +346,207 @@ class ProcessedDataset:
                 return self.get_label_by_id_index(id, index)
             index -= self.id_data_num[id]
         raise IndexError(f"Index {index} out of range")
+'''
+Dataset loader for Evaluation
+'''
+DEFAULT_LOG_ROOT = os.path.join(os.path.dirname(CURRENT_PATH), 'log')
+# DEFAULT_PROCESSED_DATA_ROOT = os.path.join(os.path.dirname(CURRENT_PATH), 'output')
+class EvalDataLoader:
+    def __init__(self, dataset_name:str, processed_data_root:str, log_root:str=DEFAULT_LOG_ROOT):
+        self.dataset_info = yaml.safe_load(open(DEFAULT_YAML_PATH, 'r'))[dataset_name]
+        self.dataset_name = dataset_name
+        self.log_root = log_root
+        self.log_file_path = os.path.join(log_root, f"{dataset_name}_log.yaml")
+        self.data_path = os.path.join(processed_data_root, dataset_name)
+        self.eval_image_path = os.path.join(log_root, f'{dataset_name}_image')
+        
+        # load 
+        self.output_log = yaml.safe_load(open(self.log_file_path, 'r'))
 
+    def label_to_list(self, info:str):
+        if info == '[]':
+            return []
+        else:
+            return list(map(int, info.strip('[]').split(',')))
+        
+    def abnormal_index_to_range(self, info:str):
+        pattern_range = r'\(\d+,\s\d+\)'
+        pattern_single = r'\(\d+\)'
+        if info == '[]':
+            return [[]]
+        else:
+            abnormal_ranges = re.findall(pattern_range, info)
+            range_list = []
+            for range_tuple in abnormal_ranges:
+                range_tuple = range_tuple.strip('()')
+                start, end = map(int, range_tuple.split(','))
+                range_list.append((start, end))
+            abnomral_singles = re.findall(pattern_single, info)
+            for single_point in abnomral_singles:
+                single_point = single_point.strip('()')
+                range_list.append((int(single_point),))
+            return range_list
+        
+    def map_window_index_to_global_index(self, window_index, offset:int=0):
+        global_index_set = set()
+        for start_end in window_index:
+            if isinstance(start_end, tuple) or isinstance(start_end, list):
+                # (A, B) or (A,) or [A] or [A, B]
+                if len(start_end) == 0:
+                    continue
+                elif len(start_end) == 1:
+                    # single point
+                    global_index_set.add(start_end[0]+offset)
+                elif len(start_end) == 2:
+                    # a range of points
+                    start, end = start_end
+                    for i in range(start, end+1):
+                        global_index_set.add(i+offset)
+                else:
+                    raise ValueError(f"Invalid abnormal index format: {start_end}")
+            else:
+                global_index_set.add(start_end+offset)
+        return global_index_set
+
+    def plot_figure(self, index, pred, image_name):
+        # print(self.plot_data.shape);exit()
+        data = self.plot_data[index]
+        label = self.plot_label[index]
+        prediction = pred.copy()
+
+        prediction[prediction == 1] = np.max(data)
+        prediction[prediction == 0] = np.min(data)
+        label_points = np.where(label == 1)[0]
+
+        fig, ax = plt.subplots(figsize=(8, 4), dpi=100)
+        ax.plot(data, label='RawData')
+        ax.plot(prediction, label='Prediction', color='green')
+        for point in label_points:
+            ax.plot(point, data[point], 'o', color='red', label='Anomaly' if point == label_points[0] else '')
+        title = image_name.split('.')[0]
+        plt.title(f'{title}')
+        plt.legend()
+        plt.savefig(os.path.join(self.eval_image_path, image_name))
+        plt.close()
+
+    def adjust_anomaly_detection_results(self, results, labels):
+        """
+        Adjust anomaly detection results based on the ground-truth labels.
+        
+        Args:
+            results (np.ndarray): The anomaly detection results (0 or 1).
+            labels (np.ndarray): The ground-truth labels (0 or 1).
+        
+        Returns:
+            np.ndarray: The adjusted anomaly detection results.
+        """
+        adjusted_results = results.copy()
+        in_anomaly = False
+        start_idx = 0
+        
+        for i in range(len(labels)):
+            if labels[i] == 1 and not in_anomaly:
+                in_anomaly = True
+                start_idx = i
+            elif labels[i] == 0 and in_anomaly:
+                in_anomaly = False
+                if np.any(results[start_idx:i] == 1):
+                    adjusted_results[start_idx:i] = 1
+        
+        # Handle the case where the last segment is an anomaly
+        if in_anomaly and np.any(results[start_idx:] == 1):
+            adjusted_results[start_idx:] = 1
+        return adjusted_results
+    
+    def eval(self, window_size:int, stride:int, vote_thres:int, point_adjust_enable:bool=False, plot_enable:bool=False):
+        eval_results = {}
+        for data_id in self.output_log:
+            data_shape = self.dataset_info['file_list'][data_id]['test']
+            if len(data_shape) == 1:
+                channels = 1
+            else:
+                channels = data_shape[1]
+
+            global_pred_array = np.zeros(data_shape)
+            global_label_array = np.zeros(data_shape)
+            eval_results[data_id] = {
+                'TP': 0,
+                'FP': 0,
+                'TN': 0,
+                'FN': 0,
+            }
+            for index in self.output_log[data_id]:
+                item = self.output_log[data_id][index]
+                labels = self.label_to_list(item['labels'])
+                abnormal_index = self.abnormal_index_to_range(item['abnormal_index'])
+                abnormal_type = item['abnormal_type']
+                abnormal_description = item['abnormal_description']
+                image_path = item['image']
+                # when making dataset, sliding window first and then separating channels.
+                # In another word, every N channels are in the same window. (if there are N channels)
+                # therefore, if there are N channels, the true window stride should be (index//N)*stride
+                # the channel can be calculated by (index%N)
+                num_stride = index // channels
+                ch = index % channels
+                offset = num_stride * stride
+
+                # map to global index
+                abnormal_point_set = self.map_window_index_to_global_index(abnormal_index, offset)
+                label_point_set = self.map_window_index_to_global_index(labels, offset)
+
+                # mark point
+                for label_point in label_point_set:
+                    global_label_array[label_point, ch] = 1
+                for abnormal_point in abnormal_point_set:
+                    global_pred_array[abnormal_point, ch] += 1
+                
+                # plot
+                if plot_enable:
+                    if not hasattr(self, 'plot_data') or not hasattr(self, 'plot_label'):
+                        plot_data_path = os.path.join(self.data_path, data_id, 'test', 'data.npy')
+                        plot_label_path = os.path.join(self.data_path, data_id, 'test', 'labels.npy')
+                        self.plot_data = np.load(plot_data_path)
+                        self.plot_label = np.load(plot_label_path)
+                    # global_index = item['global_index']
+                    pred = global_pred_array[offset:offset+window_size,ch]
+                    self.plot_figure(index, pred, f'{data_id}-{index}-{ch}.png')
+                
+            # vote
+            global_pred_array[global_pred_array >= vote_thres] = 1
+            global_pred_array[global_pred_array < vote_thres] = 0
+
+            # adjust anomaly detection results
+            if point_adjust_enable:
+                for ch in range(channels):
+                    global_pred_array[:, ch] = self.adjust_anomaly_detection_results(global_pred_array[:, ch], global_label_array[:, ch])
+                # global_pred_array = self.adjust_anomaly_detection_results(global_pred_array, global_label_array)
+
+            # calculate TP, FP, TN, FN
+            for i in range(data_shape[0]):
+                for ch in range(channels):
+                    if global_pred_array[i, ch] == 1 and global_label_array[i, ch] == 1:
+                        eval_results[data_id]['TP'] += 1
+                    elif global_pred_array[i, ch] == 1 and global_label_array[i, ch] == 0:
+                        eval_results[data_id]['FP'] += 1
+                    elif global_pred_array[i, ch] == 0 and global_label_array[i, ch] == 0:
+                        eval_results[data_id]['TN'] += 1
+                    elif global_pred_array[i, ch] == 0 and global_label_array[i, ch] == 1:
+                        eval_results[data_id]['FN'] += 1
+        # all metrics
+        TP = sum([eval_results[data_id]['TP'] for data_id in eval_results])
+        FP = sum([eval_results[data_id]['FP'] for data_id in eval_results])
+        TN = sum([eval_results[data_id]['TN'] for data_id in eval_results])
+        FN = sum([eval_results[data_id]['FN'] for data_id in eval_results])
+        accuracy = (TP + TN) / (TP + FP + TN + FN)
+        precision = TP / (TP + FP) if TP + FP != 0 else 0
+        recall = TP / (TP + FN) if TP + FN != 0 else 0
+        F1_score = 2 * precision * recall / (precision + recall) if precision + recall != 0 else 0
+        print(f"TP: {TP}, FP: {FP}, TN: {TN}, FN: {FN}")
+        print(f"Accuracy: {accuracy:.3f}, Precision: {precision:.3f}, Recall: {recall:.3f}, F1_score: {F1_score:.3f}")
+        return eval_results
 
 if __name__ == '__main__':
     # check_shape('MSL')
-    # AutoRegister()
-    dataset = RawDataset('UCR', sample_rate=1, normalization_enable=True)
-    dataset.convert_data('../output/test-1-300', 'test', 1000, 500, ImageConvertor)
+    AutoRegister()
+    # dataset = RawDataset('UCR', sample_rate=1, normalization_enable=True)
+    # dataset.convert_data('../output/test-1-300', 'test', 1000, 500, ImageConvertor)
