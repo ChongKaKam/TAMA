@@ -3,19 +3,19 @@ from Datasets.Dataset import RawDataset, ImageConvertor
 
 id_list = ['MSL', 'psm', 'SMAP', 'SMD', 'SWaT', 'UCR', 'wadi']
 dataset_config = {
-    'MSL': {
+    'MSL': { # 1096 - 2264 - 6100
         'sample_rate': 1,
         'normalization_enable': True,
         'window': 500,
         'stride': 250,
     },
-    'psm': {
+    'psm': { # 87840
         'sample_rate': 1,
         'normalization_enable': True,
         'window': 500,
         'stride': 250,
     },
-    'SMAP': {
+    'SMAP': { # 4693 - 8640
         'sample_rate': 1,
         'normalization_enable': True,
         'window': 1000,
@@ -37,13 +37,13 @@ dataset_config = {
     'SWaT': { # 449919
         'sample_rate': 1,
         'normalization_enable': False,
-        'window': 20000,
-        'stride': 10000,
+        'window': 50000,
+        'stride': 25000,
         'image_config': {
             'width': 2400,
             'height': 320,
             'dpi': 100,
-            'x_ticks': 500,
+            'x_ticks': 1000,
             'aux_enable': False,
         }
     },
@@ -60,11 +60,11 @@ dataset_config = {
             'aux_enable': True,
         }
     },
-    'wadi': {
+    'wadi': { # 17281
         'sample_rate': 1,
         'normalization_enable': True,
-        'window': 1000,
-        'stride': 500,
+        'window': 10000,
+        'stride': 7000,
     },
 }
 if __name__ == '__main__':
@@ -79,7 +79,7 @@ if __name__ == '__main__':
     #     output_dir = f'./output/'
     #     dataset = RawDataset(id, sample_rate=sample_rate, normalization_enable=normal_enable)
     #     dataset.convert_data(output_dir, mode, window, stride, ImageConvertor)
-    id = 'SMD'
+    id = 'SWaT'
     item = dataset_config[id]
     sample_rate = item['sample_rate']
     window = item['window']
