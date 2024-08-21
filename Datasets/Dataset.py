@@ -623,6 +623,6 @@ class EvalDataLoader:
 
 if __name__ == '__main__':
     # check_shape('MSL')
-    AutoRegister()
-    # dataset = RawDataset('UCR', sample_rate=1, normalization_enable=True)
-    # dataset.convert_data('../output/test-1-300', 'test', 1000, 500, ImageConvertor)
+    # AutoRegister()
+    dataset = RawDataset('UCR', sample_rate=1, normalization_enable=True)
+    dataset.convert_data('../output/test-1-300', 'test', 1000, 500, ImageConvertor)

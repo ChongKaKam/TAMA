@@ -8,6 +8,7 @@ output
 data
 log
 main-old.py
+dataset.yaml
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

@@ -1,3 +1,13 @@
+Anomaly_Classification:
+  background: ''
+  file_list: {}
+  path: /home/ysc/workspace/VisualTimeSeries/data/Anomaly_Classification
+  type: distributed
+GutenTAG:
+  background: ''
+  file_list: {}
+  path: /home/ysc/workspace/VisualTimeSeries/data/GutenTAG
+  type: distributed
 MSL:
   background: ''
   file_list:
@@ -271,7 +281,7 @@ MSL:
       train:
       - 439
       - 55
-  path: /home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/data/MSL
+  path: /home/ysc/workspace/VisualTimeSeries/data/MSL
   type: distributed
 SMAP:
   background: ''
@@ -816,7 +826,7 @@ SMAP:
       train:
       - 2876
       - 25
-  path: /home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/data/SMAP
+  path: /home/ysc/workspace/VisualTimeSeries/data/SMAP
   type: distributed
 SMD:
   background: ''
@@ -1101,7 +1111,7 @@ SMD:
       train:
       - 28713
       - 38
-  path: /home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/data/SMD
+  path: /home/ysc/workspace/VisualTimeSeries/data/SMD
   type: distributed
 SWaT:
   background: ''
@@ -1116,7 +1126,7 @@ SWaT:
       train:
       - 495000
       - 51
-  path: /home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/data/SWaT
+  path: /home/ysc/workspace/VisualTimeSeries/data/SWaT
   type: centralized
 UCR:
   background: ''
@@ -1161,7 +1171,7 @@ UCR:
       train:
       - 3000
       - 1
-  path: /home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/data/UCR
+  path: /home/ysc/workspace/VisualTimeSeries/data/UCR
   type: distributed
 psm:
   background: ''
@@ -1176,8 +1186,13 @@ psm:
       train:
       - 132480
       - 25
-  path: /home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/data/psm
+  path: /home/ysc/workspace/VisualTimeSeries/data/psm
   type: centralized
+timeeval-datasets:
+  background: ''
+  file_list: {}
+  path: /home/ysc/workspace/VisualTimeSeries/data/timeeval-datasets
+  type: distributed
 wadi:
   background: ''
   file_list:
@@ -1191,5 +1206,5 @@ wadi:
       train:
       - 20000
       - 127
-  path: /home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/data/wadi
+  path: /home/ysc/workspace/VisualTimeSeries/data/wadi
   type: centralized
