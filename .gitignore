@@ -7,6 +7,7 @@ MakeDataset.py
 output
 data
 log
+main-old.py
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

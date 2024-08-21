@@ -1,7 +1,7 @@
+import yaml
+import os
 from Datasets.Dataset import RawDataset, ImageConvertor
-
-
-id_list = ['MSL', 'psm', 'SMAP', 'SMD', 'SWaT', 'UCR', 'wadi']
+# configuration
 dataset_config = {
     'MSL': { # 1096 - 2264 - 6100
         'sample_rate': 1,
@@ -24,14 +24,15 @@ dataset_config = {
     'SMD': { # 23694 - 28479, 38
         'sample_rate': 1,
         'normalization_enable': True,
-        'window': 9000,
-        'stride': 3000,
+        'window': 7500,
+        'stride': 2500,
+        'drop_last': False,
         'image_config': {
-            'width': 1200,
+            'width': 2400,
             'height': 320,
+            'x_ticks': 50,
             'dpi': 100,
-            'x_ticks': 250,
-            'aux_enable': False,
+            'aux_enable': True,
         }
     },
     'SWaT': { # 449919
@@ -39,6 +40,7 @@ dataset_config = {
         'normalization_enable': False,
         'window': 50000,
         'stride': 25000,
+        'drop_last': False,
         'image_config': {
             'width': 2400,
             'height': 320,
@@ -51,9 +53,10 @@ dataset_config = {
         'sample_rate': 1,
         'normalization_enable': True,
         'window': 600,
-        'stride': 300,
+        'stride': 200,
+        'drop_last': False,
         'image_config': {
-            'width': 2400,
+            'width': 2000,
             'height': 320,
             'dpi': 100,
             'x_ticks': 5,
@@ -63,28 +66,32 @@ dataset_config = {
     'wadi': { # 17281
         'sample_rate': 1,
         'normalization_enable': True,
-        'window': 10000,
-        'stride': 7000,
+        'window': 6450,
+        'stride': 2150,
+        'drop_last': False,
+        'image_config': {
+            'width': 1800,
+            'height': 400,
+            'x_ticks': 150,
+            'dpi': 100,
+            'aux_enable': True,
+        }
     },
 }
 if __name__ == '__main__':
+    # configuration
+    task_config = yaml.safe_load(open('./configs/task_config.yaml', 'r'))
     mode = 'test'
-    # dataset_id = ''
-    # for id in dataset_config:
-    #     item = dataset_config[id]
-    #     sample_rate = item['sample_rate']
-    #     window = item['window']
-    #     stride = item['stride']
-    #     normal_enable = item['normalization_enable']
-    #     output_dir = f'./output/'
-    #     dataset = RawDataset(id, sample_rate=sample_rate, normalization_enable=normal_enable)
-    #     dataset.convert_data(output_dir, mode, window, stride, ImageConvertor)
-    id = 'SWaT'
-    item = dataset_config[id]
+    dataset_name = task_config['dataset_name']
+    data_id_list = task_config['data_id_list']
+    output_dir = task_config['processed_data_path']
+    
+    item = dataset_config[dataset_name]
     sample_rate = item['sample_rate']
     window = item['window']
     stride = item['stride']
     normal_enable = item['normalization_enable']
-    output_dir = f'./output/'
-    dataset = RawDataset(id, sample_rate=sample_rate, normalization_enable=normal_enable)
-    dataset.convert_data(output_dir, mode, window, stride, ImageConvertor, item['image_config'])
+    drop_last = item.get('drop_last', False)
+    
+    dataset = RawDataset(dataset_name, sample_rate=sample_rate, normalization_enable=normal_enable)
+    dataset.convert_data(output_dir, mode, window, stride, ImageConvertor, item['image_config'], drop_last=drop_last, data_id_list=data_id_list)
