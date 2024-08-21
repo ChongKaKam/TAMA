@@ -98,10 +98,17 @@ class ConvertorBase:
     output_type = 'index'
     def __init__(self, save_path:str):
         self.save_path = save_path
+        self.normal_save_path = os.path.join(self.save_path, 'normal')
+        self.abnormal_save_path = os.path.join(self.save_path, 'abnormal')
         self.ensure_dir()
     def ensure_dir(self):
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
+        if not os.path.exists(self.normal_save_path):
+            os.makedirs(self.normal_save_path)
+        if not os.path.exists(self.abnormal_save_path):
+            os.makedirs(self.abnormal_save_path)
+
     def convert_and_save(self, data, name:str):
         return data
     def load(self, idx:int)->dict:
@@ -137,7 +144,7 @@ class ImageConvertor(ConvertorBase):
         # convert to inches
         self.figsize = (self.width/self.dpi, self.height/self.dpi)
 
-    def convert_and_save(self, data, name:int):
+    def convert_and_save(self, data, name:int, separate:str = ''):
         # check if the shape of data is correct
         if len(data.shape) > 2:
             raise ValueError(f"Only accept 1D data, but got {(data.shape)}")
@@ -154,7 +161,12 @@ class ImageConvertor(ConvertorBase):
         ax.set_xticks(range(0, len(data_checked)+1, self.x_ticks))
         ax.set_xlim(0, len(data_checked)+1)
         fig.tight_layout(pad=0.1)
-        fig.savefig(os.path.join(self.save_path, f"{name}.png"), bbox_inches='tight')
+        if separate == 'normal':
+            fig.savefig(os.path.join(self.normal_save_path, f"{name}.png"), bbox_inches='tight')
+        elif separate == 'abnormal':
+            fig.savefig(os.path.join(self.abnormal_save_path, f"{name}.png"), bbox_inches='tight')
+        else:
+            fig.savefig(os.path.join(self.save_path, f"{name}.png"), bbox_inches='tight')
         plt.close()
 
     def load(self, name:int):
@@ -207,6 +219,7 @@ def remove_padding(array):
 '''
 Raw Data Loader
 '''
+
 class RawDataset:
     def __init__(self, dataset_name:str, sample_rate:float=1, normalization_enable:bool=True, yaml_path:str=DEFAULT_YAML_PATH) -> None:
         self.dataset_name = dataset_name
@@ -233,6 +246,82 @@ class RawDataset:
         mean = np.mean(data)
         std = np.std(data)
         return (data - mean) / std
+
+    def separate_label_make(self, dataset_output_dir, id, mode, window_size, stride, convertor_class, image_config:dict={}, drop_last:bool=True):
+        if id == 'data':
+            data_path = os.path.join(self.dataset_info['path'], f"{mode}.npy")
+        else:
+            data_path = os.path.join(self.dataset_info['path'], f"{id}_{mode}.npy")
+        
+        # 1. sampling & normalization
+        data = np.load(data_path)
+        data = self.sampling(data)
+        if self.normalization_enable:
+            data = self.normalize(data)
+
+        # 2. get the save path of the convertor & init the convertor
+        convertor_save_path = os.path.join(dataset_output_dir, id, mode, convertor_class.output_type)
+        self.ensure_dir(convertor_save_path)
+        convertor = convertor_class(save_path=convertor_save_path)
+        if image_config != {}:
+            convertor.image_config(**image_config)
+
+        # 3. convert & save
+        # data .npy format: [num_stride, window_size, data_channels]
+        window_data_save_path = os.path.join(dataset_output_dir, id, mode, 'data.npy')
+        window_data_array = []
+        num_stride = (len(data)-window_size) // stride + 1
+        data_channels = 1 if len(data.shape) == 1 else data.shape[1]
+        # label
+        window_label_save_path = os.path.join(dataset_output_dir, id, mode, 'labels.npy')
+        if mode == 'test':
+            if id == 'data':
+                labels_path = os.path.join(self.dataset_info['path'], f"labels.npy")
+            else:
+                labels_path = os.path.join(self.dataset_info['path'], f"{id}_labels.npy")
+            # sampling 
+            labels = np.load(labels_path)
+            labels = self.sampling(labels)
+            # label .npy format: [num_stride, window_size, label_channels]
+            window_label_array = []
+            label_channels = 1 if len(labels.shape) == 1 else labels.shape[1]
+            for i in range(num_stride):
+                start = i * stride
+                window_label = labels[start:start+window_size]
+                window_label_array.append(window_label)
+            if not drop_last:
+                start = num_stride * stride
+                window_label = labels[start:]
+                window_label = padding(window_label, window_size)
+                window_label_array.append(window_label)
+            window_label_array = np.array(window_label_array)
+            np.save(window_label_save_path, window_label_array)
+        # data
+        for i in range(num_stride):
+            start = i * stride
+            window_data = data[start:start+window_size]
+            window_data_array.append(window_data)
+            # convert & save
+            for ch in range(data_channels):
+                if mode == 'test'and window_label_array[i].sum() == 0:
+                    convertor.convert_and_save(window_data[:,ch], f'{i}-{ch}', separate='normal')
+                else:
+                    convertor.convert_and_save(window_data[:,ch], f'{i}-{ch}', separate='abnormal')
+        if not drop_last:
+            start = num_stride * stride
+            window_data = data[start:]
+            padded_window_data = padding(window_data, window_size)
+            window_data_array.append(padded_window_data)
+            for ch in range(data_channels):
+                convertor.convert_and_save(window_data[:,ch], f'{num_stride}-{ch}')
+
+        window_data_array = np.array(window_data_array)
+        np.save(window_data_save_path, window_data_array)
+        
+        # background
+        background_save_path = os.path.join(dataset_output_dir, 'background.txt')
+        with open(background_save_path, 'w') as f:
+            f.write(self.get_background_info())
 
     def make(self, dataset_output_dir, id, mode, window_size, stride, convertor_class, image_config:dict={}, drop_last:bool=True):
         # check data_path
@@ -315,7 +404,9 @@ class RawDataset:
         self.ensure_dir(dataset_output_dir)
         id_list = self.dataset_info['file_list'].keys() if data_id_list == [] else data_id_list
         for id in id_list:
-            self.make(dataset_output_dir, id, mode, window_size, stride, convertor_class, image_config=image_config, drop_last=drop_last)
+            # self.make(dataset_output_dir, id, mode, window_size, stride, convertor_class, image_config=image_config, drop_last=drop_last)
+            self.separate_label_make(dataset_output_dir, id, mode, window_size, stride, convertor_class, image_config=image_config, drop_last=drop_last)
+
 '''
 Proccessed Data Loader
 '''
@@ -625,4 +716,4 @@ if __name__ == '__main__':
     # check_shape('MSL')
     # AutoRegister()
     dataset = RawDataset('UCR', sample_rate=1, normalization_enable=True)
-    dataset.convert_data('../output/test-1-300', 'test', 1000, 500, ImageConvertor)
+    dataset.convert_data('./output/test-1-300', 'test', 1000, 500, ImageConvertor)
