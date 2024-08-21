@@ -13,6 +13,7 @@ class BigModelBase:
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.top_p = top_p
+        self.used_token = {}
 
     def load_my_api(self, name):
         self.api_key = yaml.safe_load(open(DEFAULT_API_PATH))[name]['api_key']
@@ -25,3 +26,16 @@ class BigModelBase:
 
     def chat(self, message):
         raise NotImplementedError
+
+    # chat, if fail, try again
+    def chat_retry(self, message, max_try=5):
+        for t in range(max_try):
+            try:
+                response = self.chat(message)
+                return response
+            except Exception as e:
+                print(f'Error: {e}')
+                print(f'Try again {t}/{max_try}')
+
+    def get_used_token(self):
+        return self.used_token
