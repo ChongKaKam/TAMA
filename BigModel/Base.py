@@ -3,6 +3,8 @@ import os
 import base64
 import io
 from PIL import Image
+import time
+import math
 
 DEFAULT_API_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'api_keys.yaml')
 '''
@@ -14,6 +16,8 @@ class BigModelBase:
         self.temperature = temperature
         self.top_p = top_p
         self.used_token = {}
+        self.last_used_token = {}
+        self.tokens_per_minute = math.inf
 
     def load_my_api(self, name):
         self.api_key = yaml.safe_load(open(DEFAULT_API_PATH))[name]['api_key']
@@ -28,14 +32,21 @@ class BigModelBase:
         raise NotImplementedError
 
     # chat, if fail, try again
-    def chat_retry(self, message, max_try=5):
+    def chat_retry(self, message, max_try=5, wait_time=2):
         for t in range(max_try):
             try:
                 response = self.chat(message)
                 return response
             except Exception as e:
                 print(f'Error: {e}')
+                time.sleep(wait_time)
                 print(f'Try again {t}/{max_try}')
 
     def get_used_token(self):
         return self.used_token
+    
+    def get_last_used_token(self):
+        return self.last_used_token
+    
+    def get_tokens_per_minute(self):
+        return self.tokens_per_minute
