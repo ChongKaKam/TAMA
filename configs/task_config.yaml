@@ -1,7 +1,11 @@
 dataset_name: 'UCR'
 data_id_list: []
+refined: False
+balanced: False
+ratio: 1
 
-processed_data_path: '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/'
+# processed_data_path: '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/'
+processed_data_path: '/home/ysc/workspace/VisualTimeSeries/output/test-1-300/'
 log_save_path: '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log'
 
 # normal reference lookups

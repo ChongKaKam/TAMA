@@ -8,12 +8,18 @@ from BigModel.GLM import Chat_GLM4v
 from BigModel.OpenAI import Chat_GPT4o, Chat_GPT4o_Structured
 from Datasets.Dataset import RawDataset, ProcessedDataset
 
+# 改变当前工作目录为文件所在目录
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
 # 1. load configuration
 chat_config = yaml.safe_load(open('./configs/chat_config.yaml', 'r'))
 task_config = yaml.safe_load(open('./configs/task_config.yaml', 'r'))
 dataset_name = task_config['dataset_name']
 log_save_path = task_config['log_save_path']
 data_id_list = task_config['data_id_list']
+refined = task_config['refined']
+balanced = task_config['balanced']
+data_ratio = task_config['ratio']
 processed_data_path = task_config['processed_data_path']
 normal_reference_lookup = task_config['normal_reference']
 
@@ -21,6 +27,7 @@ normal_reference_lookup = task_config['normal_reference']
 chatbot = Chat_GPT4o_Structured(**chat_config)
 # 3. load dataset
 dataset = ProcessedDataset(os.path.join(processed_data_path, dataset_name), mode='test')
+
 
 # 4. task prompt & message helper
 normal_reference_prompt = '''
@@ -141,7 +148,9 @@ logger = {}
 message_helper = MessageHelper()
 if data_id_list == []:
     data_id_list = dataset.get_id_list()
-
+# check = dataset.id_list
+pos,neg = dataset.get_instances(refined=refined, balanced=balanced, ratio=data_ratio)
+refined_data_id_list = pos + neg
 total_num = 0
 cnt = 0
 for data_id in data_id_list:
@@ -197,6 +206,9 @@ for data_id in data_id_list:
             if i not in logger[data_id]:
                 logger[data_id][i] = {}
             stride_msg_helper = message_helper.copy_message()
+            if f"{data_id}_{i}_{ch}" not in refined_data_id_list:
+                print(f'[{cnt}/{total_num}]>> id: {data_id}, num_stride {i}, channel: {ch} done, Used tokens: {0} --> TIME: 0.0s')
+                continue
             image_path = dataset.get_image(data_id, i, ch)
             image_label = dataset.get_label(data_id, i, ch)
             label_index = np.where(image_label == 1)[0].tolist()

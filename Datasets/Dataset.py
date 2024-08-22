@@ -297,6 +297,7 @@ class RawDataset:
             window_label_array = np.array(window_label_array)
             np.save(window_label_save_path, window_label_array)
         # data
+        separate_id_list = {'normal': [], 'abnormal': [],'save_path': convertor.save_path}
         for i in range(num_stride):
             start = i * stride
             window_data = data[start:start+window_size]
@@ -304,9 +305,12 @@ class RawDataset:
             # convert & save
             for ch in range(data_channels):
                 if mode == 'test'and window_label_array[i].sum() == 0:
-                    convertor.convert_and_save(window_data[:,ch], f'{i}-{ch}', separate='normal')
+                    separate_id_list['normal'].append(f'{id}-{i}-{ch}')
+                    # convertor.convert_and_save(window_data[:,ch], f'{i}-{ch}', separate='normal')
                 else:
-                    convertor.convert_and_save(window_data[:,ch], f'{i}-{ch}', separate='abnormal')
+                    separate_id_list['abnormal'].append(f'{id}-{i}-{ch}')
+                    # convertor.convert_and_save(window_data[:,ch], f'{i}-{ch}', separate='abnormal')
+                convertor.convert_and_save(window_data[:,ch], f'{i}-{ch}')
         if not drop_last:
             start = num_stride * stride
             window_data = data[start:]
@@ -322,6 +326,7 @@ class RawDataset:
         background_save_path = os.path.join(dataset_output_dir, 'background.txt')
         with open(background_save_path, 'w') as f:
             f.write(self.get_background_info())
+        return separate_id_list
 
     def make(self, dataset_output_dir, id, mode, window_size, stride, convertor_class, image_config:dict={}, drop_last:bool=True):
         # check data_path
@@ -400,12 +405,18 @@ class RawDataset:
     '''
     def convert_data(self, output_dir:str, mode:str, window_size:int, stride:int, convertor_class:ConvertorBase, 
                      image_config:dict={}, drop_last:bool=True, data_id_list:list=[]):
+        import yaml
         dataset_output_dir = os.path.join(output_dir, self.dataset_name)
         self.ensure_dir(dataset_output_dir)
         id_list = self.dataset_info['file_list'].keys() if data_id_list == [] else data_id_list
+        structure = {}
         for id in id_list:
             # self.make(dataset_output_dir, id, mode, window_size, stride, convertor_class, image_config=image_config, drop_last=drop_last)
-            self.separate_label_make(dataset_output_dir, id, mode, window_size, stride, convertor_class, image_config=image_config, drop_last=drop_last)
+            id_idx_list = self.separate_label_make(dataset_output_dir, id, mode, window_size, stride, convertor_class, image_config=image_config, drop_last=drop_last)
+            structure[id] = id_idx_list
+        with open(os.path.join(dataset_output_dir, f"{mode}_structure.yaml"), 'w') as f:
+            yaml.dump(structure, f)
+        
 
 '''
 Proccessed Data Loader
@@ -421,7 +432,40 @@ class ProcessedDataset:
 
     def get_id_list(self):
         return self.id_list
-    
+
+    def get_instances(self, balanced:bool=True, ratio:float=0.5,refined:bool=False):
+        import yaml
+        import random
+        structure = yaml.safe_load(open(os.path.join(self.dataset_path, f"{self.mode}_structure.yaml"), 'r'))
+        pos = []
+        neg = []
+        if refined:
+            if balanced:
+                for id in structure.keys():
+                    temp_pos = structure[id]['abnormal']
+                    pos_len = len(temp_pos)
+                    pos += temp_pos
+                    neg += random.sample(structure[id]['normal'], pos_len)
+                pos = random.sample(pos, int(len(pos)*ratio))
+                neg = random.sample(neg, int(len(neg)*ratio))
+            else:
+                for id in structure.keys():
+                    pos += random.sample(structure[id]['abnormal'], int(len(structure[id]['abnormal'])*ratio))
+                    neg += random.sample(structure[id]['normal'], int(len(structure[id]['normal'])*ratio))
+        else:
+            if balanced:
+                for id in structure.keys():
+                    temp_pos = structure[id]['abnormal']
+                    pos_len = len(temp_pos)
+                    pos += temp_pos
+                    neg += random.sample(structure[id]['normal'], pos_len)
+            else:
+                for id in structure.keys():
+                    pos += structure[id]['abnormal']
+                    neg += structure[id]['normal']
+        return pos, neg
+
+
     def get_background_info(self):
         if self.background == '':
             self.background = 'No background information'
