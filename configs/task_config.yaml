@@ -1,11 +1,12 @@
-dataset_name: 'KDD-TSAD'
+dataset_name: 'UCR'
 data_id_list: []
-refined: True
-balanced: True
+refined: False
+balanced: False
 ratio: 1
 
-# processed_data_path: '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/'
+# processed_data_path: '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/' # ZJX
 processed_data_path: '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output'
+# log_save_path: '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log' # ZJX
 log_save_path: '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log'
 
 # normal reference lookups

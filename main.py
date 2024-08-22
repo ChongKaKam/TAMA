@@ -262,7 +262,7 @@ for data_id in data_id_list:
 
             # Chat with the chatbot
             start_time = time.time()
-            stride_msg_helper.add_user_message(anormaly_detection_prompt, [image_path], "auto")
+            stride_msg_helper.add_user_message(anormaly_detection_prompt, [image_path], "high")
             # Add rate limits
             used_min = (start_time - start_min) // 60
             if used_min > current_min:
@@ -310,8 +310,6 @@ for data_id in data_id_list:
                 }
                 
             }
-            if cnt > 5:
-                break
     # 7.save log
     yaml.dump({data_id: logger[data_id]}, log_file)
 
