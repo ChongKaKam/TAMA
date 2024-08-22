@@ -81,7 +81,7 @@ dataset_config = {
 if __name__ == '__main__':
     # configuration
     task_config = yaml.safe_load(open('./configs/task_config.yaml', 'r'))
-    mode = 'test'
+    mode = 'train'
     dataset_name = task_config['dataset_name']
     data_id_list = task_config['data_id_list']
     output_dir = task_config['processed_data_path']

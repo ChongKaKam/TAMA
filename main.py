@@ -25,6 +25,7 @@ normal_reference_lookup = task_config['normal_reference']
 
 # 2. init chatbot
 chatbot = Chat_GPT4o_Structured(**chat_config)
+token_rate_limit = chatbot.get_tokens_per_minute()
 # 3. load dataset
 dataset = ProcessedDataset(os.path.join(processed_data_path, dataset_name), mode='test')
 
@@ -37,9 +38,10 @@ This task contains two parts:
     - "Task1": I will give you some "normal reference" time series data slices without any abnormality. And you need to extract some valuable information from them to help me find the abnormality in the following time series data slices.
     - "Task2": I will give you some time series data slices with some abnormalities. You need to find the abnormality in them and provide some structured information.
 besides, I will offer you some background information about the data plots:
-    - The x-axis represents the time series index.
-    - The y-axis represents the value of the time series.
+    - The horizonal axis represents the time series index.
+    - The vertical axis represents the value of the time series.
     - all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
+    - all normal reference is a slice of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
 
 <Task>: 
 Now we are in the "Task1" part: I will give you some "normal reference" time series data slices without any abnormality. And you need to extract some valuable information from them to help me find the abnormality in the following time series data slices.
@@ -58,10 +60,11 @@ class normal_reference_response(BaseModel):
 
 def make_normal_reference_response_prompt(normal_value_range, normal_pattern):
     assistant_response_prompt = f'''
-    The answer of "Task1" part is as follows:
-        - normal_value_range: {normal_value_range}
+    The answer of "Task1" part is as follows: 
+        - normal_value_range (the range of sequence may float at a slight level, so the range is not fixed, but the range should be in the same level): {normal_value_range}
         - normal_pattern: {normal_pattern}
     '''
+    
     return assistant_response_prompt
 
 anormaly_detection_prompt = '''
@@ -71,9 +74,10 @@ This task contains two parts:
     - "Task1": I will give you some "normal reference" time series data slices without any abnormality. And you need to extrace some valuable information from them to help me find the abnormality in the following time series data slices.
     - "Task2": I will give you some time series data slices with some abnormalities. You need to find the abnormality in them and provide some structured information.
 besides, I will offer you some background information about the data plots:
-    - The x-axis represents the time series index.
-    - The y-axis represents the value of the time series.
+    - The horizonal axis represents the time series index.
+    - The vertical axis represents the value of the time series.
     - all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
+    - all normal reference is a slice of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
 
 <Task>: 
 Now we are in the "Task2" part: I will give you some time series data slices with some abnormalities. You need to find the abnormality in them and provide some structured information.
@@ -86,20 +90,25 @@ The output should include some structured information:
         + the output format should be like "[(start1, end1), (start2, end2), ...]", if there are some single outliers, the output should be "[(index1), (index2), ...]",if there is no abnormality, you can say "[]". The final output should can be mixed with these three formats.
         + Since the x-axis in the image only provides a limited number of tick marks, in order to improve the accuracy of your prediction, please try to estimate the coordinates of any anomaly locations based on the tick marks shown in the image as best as possible.
         + all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
+        + all normal reference is a slice of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
     - abnormal_type: The abnormality type of the time series, choose from [none, shapelet, seasonal, trend]. The detailed explanation is as follows:
         + none: No abnormality
         + shapelet: Shapelet outliers refer to the subsequences with dissimilar basic shapelets compared with the normal shapelet
         + seasonal: Seasonal outliers are the subsequences with unusual seasonalities compared with the overall seasonality
         + trend: Trend outliers indicate the subsequences that significantly alter the trend of the time series, leading to a permanent shift on the mean of the data.
     - abnormal_description: Make a brief description of the abnormality, why do you think it is abnormal? 
-    - confidence: The confidence of your prediction. The value should be a integer between 0 and 100.
+    - confidence: The confidence of your prediction. The value should be a integer between 1 and 4 which represents the confidence level of your prediction. Each level of confidence is explained as follows:
+        + 1: No confidence: I am not sure about my prediction
+        + 2: Low confidence: Weak evidence supports my prediction 
+        + 3: medium confidence: strong evidence supports my prediction
+        + 4: high confidence: 100% sure about my prediction
 Last, please double check before you submit your answer.
 '''
 class anormaly_detection_response(BaseModel):
         abnormal_index: str = Field(description="the output format should be like '[(start1, end1), (start2, end2), ...]', if there are some single outliers, the output should be '[(index1), (index2), ...]',if there is no abnormality, you can say '[]'. The final output should can be mixed with these three formats.")
         abnormal_type: str = Field(description="The abnormality type of the time series, choose from [none, shapelet, seasonal, trend].")
         abnormal_description: str = Field(description="Make a brief description of the abnormality, why do you think it is abnormal?")
-        confidence: int = Field(description="The confidence of your prediction. The value should be a number between 0 and 100.")
+        confidence: int = Field(description="confidence: The confidence of your prediction. The value should be a integer between 1 and 4 which represents the confidence level of your prediction.")
 
 # Message Helper: Help to generate the message content and keep the message list
 class MessageHelper:
@@ -166,7 +175,8 @@ for data_id in data_id_list:
 # }
 
 time_list = []
-
+current_min = 0
+token_per_min = 0
 # 'SMD': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/SMD',
 # 'UCR': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR'
 normal_ref_base = os.path.join(processed_data_path, dataset_name)
@@ -184,6 +194,7 @@ def find_normal_reference(dataset_name, data_id, channel)->list:
         
 
 # 6. run
+start_min = time.time()
 for data_id in data_id_list:
     data_id_info = dataset.get_data_id_info(data_id)
     num_stride = data_id_info['num_stride']
@@ -194,6 +205,7 @@ for data_id in data_id_list:
     for ch in range(data_channels):
         # normal reference
         # normal_reference_image = os.path.join(normal_ref_base, data_id, 'train', 'image', f'6-{ch}.png')    # SMD
+
         normal_reference_image_list = find_normal_reference(dataset_name, data_id, ch)
         message_helper.add_user_message(normal_reference_prompt, normal_reference_image_list)
         NR_response = chatbot.chat(message_helper.get_message(), FormatModel=normal_reference_response)
@@ -206,7 +218,7 @@ for data_id in data_id_list:
             if i not in logger[data_id]:
                 logger[data_id][i] = {}
             stride_msg_helper = message_helper.copy_message()
-            if f"{data_id}_{i}_{ch}" not in refined_data_id_list:
+            if f"{data_id}-{i}-{ch}" not in refined_data_id_list:
                 print(f'[{cnt}/{total_num}]>> id: {data_id}, num_stride {i}, channel: {ch} done, Used tokens: {0} --> TIME: 0.0s')
                 continue
             image_path = dataset.get_image(data_id, i, ch)
@@ -216,14 +228,26 @@ for data_id in data_id_list:
             # Chat with the chatbot
             start_time = time.time()
             stride_msg_helper.add_user_message(anormaly_detection_prompt, [image_path])
+            # Add rate limits
+            used_min = (start_time - start_min) // 60
+            if used_min > current_min:
+                current_min = used_min
+                token_per_min = token_per_min + used_tokens['total_tokens']
+                if token_per_min > token_rate_limit:
+                    current_time = time.time()
+                    sleep_time = 60 - (current_time - start_min) % 60
+                    print(f'Rate limit reached {token_per_min}/{token_rate_limit}, sleep for {sleep_time}s')
+                    token_per_min = 0
+                    time.sleep(sleep_time)
             response = chatbot.chat(stride_msg_helper.get_message(), FormatModel=anormaly_detection_response)
             end_time = time.time()
-            used_tokens = chatbot.get_used_token()
+            used_tokens = chatbot.get_last_used_token()
 
             processing_time = end_time - start_time
             time_list.append(processing_time)
             cnt += 1
             print(f'[{cnt}/{total_num}]>> id: {data_id}, num_stride {i}, channel: {ch} done, Used tokens: {used_tokens} --> TIME: {processing_time:.3f}s')
+            
             # logger
             logger[data_id][i][ch] = {
                 'data_id': data_id,
@@ -249,7 +273,8 @@ with open(os.path.join(log_save_path, f'{dataset_name}_log.yaml'), 'w') as f:
 print(f'Total num: {total_num}, Total time: {sum(time_list):.3f}s, Average time: {(sum(time_list)/(len(time_list))):.3f}s')
 used_tokens = chatbot.get_used_token()
 print(f'Used tokens: {used_tokens}')
-
+cost = used_tokens['total_tokens'] / 1000000 * 5
+print(f'Cost: {cost:.2f} USD') 
 # for data_id in data_id_list:
 #     data_id_info = dataset.get_data_id_info(data_id)
 #     num_stride = data_id_info['num_stride']

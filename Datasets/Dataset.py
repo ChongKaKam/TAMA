@@ -675,6 +675,8 @@ class EvalDataLoader:
             ch_global_label_array = np.zeros(data_shape)
             for ch in range(data_channels):
                 for stride_idx in range(num_stride):
+                    if self.output_log[data_id][stride_idx]=={}:
+                        continue
                     item = self.output_log[data_id][stride_idx][ch]
                     labels = self.label_to_list(item['labels'])
                     abnormal_index = self.abnormal_index_to_range(item['abnormal_index'])
@@ -682,7 +684,7 @@ class EvalDataLoader:
                     abnormal_description = item['abnormal_description']
                     image_path = item['image']
                     confidence = int(item['confidence'])
-                    if confidence <= 90:
+                    if confidence <= 3:
                         abnormal_index = []
                     # map to global index
                     offset = stride_idx * stride
@@ -699,7 +701,12 @@ class EvalDataLoader:
                     if plot_enable:
                         plot_data = self.processed_dataset.get_data(data_id, stride_idx, ch)
                         plot_label = self.processed_dataset.get_label(data_id, stride_idx, ch)
-                        plot_pred = [point-offset for point in abnormal_point_set]
+                        plot_pred = list(self.map_window_index_to_global_index(abnormal_index, 0))
+                        plot_pred.sort()
+                        if data_id == '137' and stride_idx in [7,8,9,10]:
+                            print(f'{data_id}_{stride_idx}_{ch}')
+                            print(plot_pred)
+                            print(plot_label)
                         self.plot_figure(plot_data, plot_label, plot_pred, f"{data_id}_{stride_idx}_{ch}")
                 
                 # vote in channel
@@ -758,6 +765,6 @@ class EvalDataLoader:
 
 if __name__ == '__main__':
     # check_shape('MSL')
-    # AutoRegister()
+    AutoRegister()
     dataset = RawDataset('UCR', sample_rate=1, normalization_enable=True)
     dataset.convert_data('./output/test-1-300', 'test', 1000, 500, ImageConvertor)
