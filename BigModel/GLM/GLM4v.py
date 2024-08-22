@@ -11,6 +11,7 @@ class Chat_GLM4v(BigModelBase):
         self.load_my_api('chatglm')
         self.client = ZhipuAI(api_key=self.api_key)
         self.model_name = 'glm-4v'
+        # self.tokens_per_minute = 60000
 
     def chat(self, messages:list):
         response = self.client.chat.completions.create(
@@ -21,5 +22,9 @@ class Chat_GLM4v(BigModelBase):
             top_p=self.top_p
         )
         ans = response.choices[0].message.content
-        # TODO: count the used tokens
+        # TODO: NoImplementationError
+        # last used tokens
+        self.last_used_token = response.usage.completion_tokens
+        # count the used tokens
+        self.used_token['completion_tokens'] += response.usage.completion_tokens
         return ans
