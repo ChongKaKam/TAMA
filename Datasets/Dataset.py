@@ -55,6 +55,27 @@ def AutoRegister(root_path:str=DEFAULT_ROOT_PATH, yaml_path:str=DEFAULT_YAML_PAT
                 },
                 'background': '',
             }
+        # dataset with meta_data.yaml
+        elif 'meta_data.yaml' in os.listdir(dataset_path):
+            meta_info = yaml.safe_load(open(os.path.join(dataset_path, 'meta_data.yaml'), 'r'))
+            data_id_list = meta_info['mapping'].keys()
+            id_map = {}
+            for id_name in data_id_list:
+                id_name = str(id_name)
+                if id_name not in dataset_map:
+                    id_map[id_name] = {}
+                if os.path.exists(os.path.join(dataset_path, f'{id_name}.train.npy')):
+                    id_map[id_name]['train'] = list(np.load(os.path.join(dataset_path, f'{id_name}.train.npy')).shape)
+                if os.path.exists(os.path.join(dataset_path, f'{id_name}.test.npy')):
+                    id_map[id_name]['test'] = list(np.load(os.path.join(dataset_path, f'{id_name}.test.npy')).shape)
+                if os.path.exists(os.path.join(dataset_path, f'{id_name}.labels.npy')):
+                    id_map[id_name]['labels'] = list(np.load(os.path.join(dataset_path, f'{id_name}.labels.npy')).shape)
+                dataset_map[dataset_name] = {
+                    'path': dataset_path,
+                    'type': 'meta_data',
+                    'file_list': id_map,
+                    'background': '',
+                }
         # distributed
         else:
             id_map = {}
@@ -252,6 +273,9 @@ class RawDataset:
             data_path = os.path.join(self.dataset_info['path'], f"{mode}.npy")
         else:
             data_path = os.path.join(self.dataset_info['path'], f"{id}_{mode}.npy")
+            if not os.path.exists(data_path):
+                id = str(id)
+                data_path = os.path.join(self.dataset_info['path'], f"{id}.{mode}.npy")
         
         # 1. sampling & normalization
         data = np.load(data_path)
@@ -270,8 +294,10 @@ class RawDataset:
         # data .npy format: [num_stride, window_size, data_channels]
         window_data_save_path = os.path.join(dataset_output_dir, id, mode, 'data.npy')
         window_data_array = []
-        num_stride = (len(data)-window_size) // stride + 1
+        num_stride = (len(data)-window_size) // stride + 1 if len(data) >= window_size else 1
         data_channels = 1 if len(data.shape) == 1 else data.shape[1]
+        if data_channels == 1:
+            data = data.reshape(-1, 1)
         # label
         window_label_save_path = os.path.join(dataset_output_dir, id, mode, 'labels.npy')
         if mode == 'test':
@@ -279,15 +305,20 @@ class RawDataset:
                 labels_path = os.path.join(self.dataset_info['path'], f"labels.npy")
             else:
                 labels_path = os.path.join(self.dataset_info['path'], f"{id}_labels.npy")
+                if not os.path.exists(labels_path):
+                    labels_path = os.path.join(self.dataset_info['path'], f"{id}.labels.npy")
             # sampling 
             labels = np.load(labels_path)
             labels = self.sampling(labels)
             # label .npy format: [num_stride, window_size, label_channels]
             window_label_array = []
             label_channels = 1 if len(labels.shape) == 1 else labels.shape[1]
+            if label_channels == 1:
+                labels = labels.reshape(-1, 1)
             for i in range(num_stride):
                 start = i * stride
                 window_label = labels[start:start+window_size]
+                window_label = padding(window_label, window_size)
                 window_label_array.append(window_label)
             if not drop_last:
                 start = num_stride * stride
@@ -301,6 +332,7 @@ class RawDataset:
         for i in range(num_stride):
             start = i * stride
             window_data = data[start:start+window_size]
+            window_data = padding(window_data, window_size)
             window_data_array.append(window_data)
             # convert & save
             for ch in range(data_channels):
@@ -310,14 +342,14 @@ class RawDataset:
                 else:
                     separate_id_list['abnormal'].append(f'{id}-{i}-{ch}')
                     # convertor.convert_and_save(window_data[:,ch], f'{i}-{ch}', separate='abnormal')
-                convertor.convert_and_save(window_data[:,ch], f'{i}-{ch}')
+                convertor.convert_and_save(remove_padding(window_data[:,ch]), f'{i}-{ch}')
         if not drop_last:
             start = num_stride * stride
             window_data = data[start:]
             padded_window_data = padding(window_data, window_size)
             window_data_array.append(padded_window_data)
             for ch in range(data_channels):
-                convertor.convert_and_save(window_data[:,ch], f'{num_stride}-{ch}')
+                convertor.convert_and_save(remove_padding(window_data[:,ch]), f'{num_stride}-{ch}')
 
         window_data_array = np.array(window_data_array)
         np.save(window_data_save_path, window_data_array)
@@ -408,9 +440,15 @@ class RawDataset:
         import yaml
         dataset_output_dir = os.path.join(output_dir, self.dataset_name)
         self.ensure_dir(dataset_output_dir)
-        id_list = self.dataset_info['file_list'].keys() if data_id_list == [] else data_id_list
+        if self.dataset_info['type'] == 'centralized' or self.dataset_info['type'] == 'distributed':
+            id_list = self.dataset_info['file_list'].keys() if data_id_list == [] else data_id_list
+        elif self.dataset_info['type'] == 'meta_data':
+            id_list = self.dataset_info['file_list'].keys() if data_id_list == [] else data_id_list
+        else:
+            raise ValueError(f"Invalid dataset type: {self.dataset_info['type']}")
         structure = {}
         for id in id_list:
+            id = str(id)
             # self.make(dataset_output_dir, id, mode, window_size, stride, convertor_class, image_config=image_config, drop_last=drop_last)
             id_idx_list = self.separate_label_make(dataset_output_dir, id, mode, window_size, stride, convertor_class, image_config=image_config, drop_last=drop_last)
             structure[id] = id_idx_list
@@ -496,7 +534,11 @@ class ProcessedDataset:
         return self.total_data_num
     
     def get_data_id_info(self, data_id):
-        return self.data_id_info[data_id]
+        try:
+            info = self.data_id_info[data_id]
+        except:
+            info = self.data_id_info[f'{data_id}']
+        return info
     
     # TODO: 后续可以优化读取的次数，提升运行速度
     def get_data(self, data_id, num_stride, ch):
@@ -675,12 +717,14 @@ class EvalDataLoader:
             ch_global_label_array = np.zeros(data_shape)
             for ch in range(data_channels):
                 for stride_idx in range(num_stride):
+                    if stride_idx not in self.output_log[data_id]:
+                        continue
                     if self.output_log[data_id][stride_idx]=={}:
                         continue
                     item = self.output_log[data_id][stride_idx][ch]
                     labels = self.label_to_list(item['labels'])
                     abnormal_index = self.abnormal_index_to_range(item['abnormal_index'])
-                    abnormal_type = item['abnormal_type']
+                    # abnormal_type = item['abnormal_type']
                     abnormal_description = item['abnormal_description']
                     image_path = item['image']
                     confidence = int(item['confidence'])
@@ -766,5 +810,5 @@ class EvalDataLoader:
 if __name__ == '__main__':
     # check_shape('MSL')
     AutoRegister()
-    dataset = RawDataset('UCR', sample_rate=1, normalization_enable=True)
-    dataset.convert_data('./output/test-1-300', 'test', 1000, 500, ImageConvertor)
+    # dataset = RawDataset('UCR', sample_rate=1, normalization_enable=True)
+    # dataset.convert_data('./output/test-1-300', 'test', 1000, 500, ImageConvertor)

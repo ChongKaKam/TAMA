@@ -77,11 +77,39 @@ dataset_config = {
             'aux_enable': True,
         }
     },
+    'NAB': { # 17281
+        'sample_rate': 1,
+        'normalization_enable': True,
+        'window': 4200,
+        'stride': 1400,
+        'drop_last': False,
+        'image_config': {
+            'width': 1800,
+            'height': 400,
+            'x_ticks': 150,
+            'dpi': 100,
+            'aux_enable': True,
+        }
+    },
+    'KDD-TSAD': { # 17281
+        'sample_rate': 1,
+        'normalization_enable': True,
+        'window': 10000,
+        'stride': 5000,
+        'drop_last': False,
+        'image_config': {
+            'width': 1800,
+            'height': 400,
+            'x_ticks': 500,
+            'dpi': 100,
+            'aux_enable': True,
+        }
+    },
 }
 if __name__ == '__main__':
     # configuration
     task_config = yaml.safe_load(open('./configs/task_config.yaml', 'r'))
-    mode = 'train'
+    mode = 'test'
     dataset_name = task_config['dataset_name']
     data_id_list = task_config['data_id_list']
     output_dir = task_config['processed_data_path']

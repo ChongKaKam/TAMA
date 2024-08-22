@@ -7,10 +7,10 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 dataset_name = 'UCR'
 vote_thres = 2
 point_adjust_enable = True
-plot_enable = False
+plot_enable = True
 channel_shared = False
-processed_data_root = f'./output/test-1-300'
-log_root = f'./output/log/'
+processed_data_root = f'./output/'
+log_root = f'log/'
 image_config= {
     'width': 2000,
     'height': 480,
