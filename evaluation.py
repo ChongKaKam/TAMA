@@ -6,7 +6,7 @@ import make_dataset
 dataset_name = 'UCR'
 vote_thres = 2
 point_adjust_enable = True
-plot_enable = True
+plot_enable = False
 channel_shared = False
 processed_data_root = f'./output/'
 log_root = f'./log/'
