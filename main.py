@@ -80,42 +80,65 @@ besides, I will offer you some background information about the data plots:
     - all normal reference is a slice of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
 
 <Task>: 
-Now we are in the "Task2" part: I will give you some time series data slices with some abnormalities. You need to find the abnormality in them and provide some structured information.
 In "Task1" part, you have already extracted some valuable information from the "normal reference" time series data slices. You can use them to help you find the abnormality in the following time series data slices.
+Now we are in "Task2", you are expected to detect the abnormality in the given data. 
 
 <Target>: 
 Please help me find the abnormality in this time series data slice and provide some structured information.
 The output should include some structured information:
+    - has_abnormality: Whether there is an abnormality in the time series data slice. The value should be "True" or "False".
     - abnormal_index: The abnormality index of the time series. There are some requirements:
         + the output format should be like "[(start1, end1), (start2, end2), ...]", if there are some single outliers, the output should be "[(index1), (index2), ...]",if there is no abnormality, you can say "[]". The final output should can be mixed with these three formats.
         + Since the x-axis in the image only provides a limited number of tick marks, in order to improve the accuracy of your prediction, please try to estimate the coordinates of any anomaly locations based on the tick marks shown in the image as best as possible.
         + all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
         + all normal reference is a slice of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
-    - abnormal_type: The abnormality type of the time series, choose from [none, shapelet, seasonal, trend]. The detailed explanation is as follows:
-        + none: No abnormality
-        + shapelet: Shapelet outliers refer to the subsequences with dissimilar basic shapelets compared with the normal shapelet
-        + seasonal: Seasonal outliers are the subsequences with unusual seasonalities compared with the overall seasonality
-        + trend: Trend outliers indicate the subsequences that significantly alter the trend of the time series, leading to a permanent shift on the mean of the data.
     - abnormal_description: Make a brief description of the abnormality, why do you think it is abnormal? 
     - confidence: The confidence of your prediction. The value should be a integer between 1 and 4 which represents the confidence level of your prediction. Each level of confidence is explained as follows:
         + 1: No confidence: I am not sure about my prediction
         + 2: Low confidence: Weak evidence supports my prediction 
         + 3: medium confidence: strong evidence supports my prediction
-        + 4: high confidence: 100% sure about my prediction
+        + 4: high confidence: more than 95% of the evidence supports my prediction
 Last, please double check before you submit your answer.
 '''
 class anormaly_detection_response(BaseModel):
+        has_abnormality: str = Field(description="Whether there is an abnormality in the time series data slice. The value should be 'True' or 'False'.")
         abnormal_index: str = Field(description="the output format should be like '[(start1, end1), (start2, end2), ...]', if there are some single outliers, the output should be '[(index1), (index2), ...]',if there is no abnormality, you can say '[]'. The final output should can be mixed with these three formats.")
-        abnormal_type: str = Field(description="The abnormality type of the time series, choose from [none, shapelet, seasonal, trend].")
         abnormal_description: str = Field(description="Make a brief description of the abnormality, why do you think it is abnormal?")
         confidence: int = Field(description="confidence: The confidence of your prediction. The value should be a integer between 1 and 4 which represents the confidence level of your prediction.")
+
+double_check_prompt = '''
+based on your response, you believe there is a abnormality in this data slice. I will give you a high resultion image to help you double check.
+Please help me find the abnormality in this time series data slice and provide some structured information:
+    - has_abnormality: Whether there is an abnormality in the time series data slice. The value should be "True" or "False".
+    - abnormal_index: The abnormality index of the time series. There are some requirements:
+        + the output format should be like "[(start1, end1), (start2, end2), ...]", if there are some single outliers, the output should be "[(index1), (index2), ...]",if there is no abnormality, you can say "[]". The final output should can be mixed with these three formats.
+        + Since the x-axis in the image only provides a limited number of tick marks, in order to improve the accuracy of your prediction, please try to estimate the coordinates of any anomaly locations based on the tick marks shown in the image as best as possible.
+        + all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
+        + all normal reference is a slice of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
+    - abnormal_description: Make a brief description of the abnormality, why do you think it is abnormal? 
+    - confidence: The confidence of your prediction. The value should be a integer between 1 and 4 which represents the confidence level of your prediction. Each level of confidence is explained as follows:
+        + 1: No confidence: I am not sure about my prediction
+        + 2: Low confidence: Weak evidence supports my prediction 
+        + 3: medium confidence: strong evidence supports my prediction
+        + 4: high confidence: more than 95% of the evidence supports my prediction
+'''
+def make_double_check_response_prompt(has_abnormality, confidence, abnormal_index, abnormal_description):
+    assistant_response_prompt = f'''
+    The answer is as follows: 
+        - has_abnormality: {has_abnormality}
+        - abnormal_index: {abnormal_index}
+        - abnormal_description: {abnormal_description}
+        - confidence: {confidence}
+    '''
+    
+    return assistant_response_prompt
 
 # Message Helper: Help to generate the message content and keep the message list
 class MessageHelper:
     def __init__(self):
         self.message_list = []
 
-    def add_user_message(self, text:str, image_list:list=[]):
+    def add_user_message(self, text:str, image_list:list=[], detail='auto'):
         new_message = {
             "role": "user",
             "content": [{"type": "text", "text": text,}]
@@ -124,11 +147,11 @@ class MessageHelper:
             base64_img = chatbot.image_encoder_base64(image)
             new_message['content'].append({
                 "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{base64_img}"},
+                "image_url": {"url": f"data:image/png;base64,{base64_img}", "detail": detail,},
             })
         self.message_list.append(new_message)
         
-    def add_chatbot_message(self, text:str, image_list:list=[]):
+    def add_chatbot_message(self, text:str, image_list:list=[], detail='auto'):
         new_message = {
             "role": "assistant",
             "content": [{"type": "text", "text": text,}]
@@ -137,7 +160,7 @@ class MessageHelper:
             base64_img = chatbot.image_encoder_base64(image)
             new_message['content'].append({
                 "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{base64_img}"},
+                "image_url": {"url": f"data:image/png;base64,{base64_img}", "detail": detail,},
             })
         self.message_list.append(new_message)
 
@@ -191,9 +214,20 @@ def find_normal_reference(dataset_name, data_id, channel)->list:
             image_path = os.path.join(normal_ref_base, data_id, 'train', 'image', f'{i}-{channel}.png')
             image_list.append(image_path)
         return image_list
+    elif dataset_name == 'NAB':
+        image_list = []
+        image_num = 1
+        for i in range(image_num):
+            # /home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/NAB/0/test/image/0-0.png
+            image_path = os.path.join(normal_ref_base, data_id, 'test', 'image', f'{i}-0.png')
+            image_list.append(image_path)
+        return image_list
+    else:
+        raise ValueError(f'Unknown dataset name: {dataset_name}')
         
 
 # 6. run
+log_file = open(os.path.join(log_save_path, f'{dataset_name}_log.yaml'), 'w')
 start_min = time.time()
 for data_id in data_id_list:
     data_id_info = dataset.get_data_id_info(data_id)
@@ -207,7 +241,7 @@ for data_id in data_id_list:
         # normal_reference_image = os.path.join(normal_ref_base, data_id, 'train', 'image', f'6-{ch}.png')    # SMD
 
         normal_reference_image_list = find_normal_reference(dataset_name, data_id, ch)
-        message_helper.add_user_message(normal_reference_prompt, normal_reference_image_list)
+        message_helper.add_user_message(normal_reference_prompt, normal_reference_image_list, "high")
         NR_response = chatbot.chat(message_helper.get_message(), FormatModel=normal_reference_response)
         used_tokens = chatbot.get_used_token()
         print(f'New Channel: Normal Reference Used tokens: {used_tokens}')
@@ -220,6 +254,7 @@ for data_id in data_id_list:
             stride_msg_helper = message_helper.copy_message()
             if f"{data_id}-{i}-{ch}" not in refined_data_id_list:
                 print(f'[{cnt}/{total_num}]>> id: {data_id}, num_stride {i}, channel: {ch} done, Used tokens: {0} --> TIME: 0.0s')
+                cnt += 1
                 continue
             image_path = dataset.get_image(data_id, i, ch)
             image_label = dataset.get_label(data_id, i, ch)
@@ -227,7 +262,7 @@ for data_id in data_id_list:
 
             # Chat with the chatbot
             start_time = time.time()
-            stride_msg_helper.add_user_message(anormaly_detection_prompt, [image_path])
+            stride_msg_helper.add_user_message(anormaly_detection_prompt, [image_path], "auto")
             # Add rate limits
             used_min = (start_time - start_min) // 60
             if used_min > current_min:
@@ -240,6 +275,14 @@ for data_id in data_id_list:
                     token_per_min = 0
                     time.sleep(sleep_time)
             response = chatbot.chat(stride_msg_helper.get_message(), FormatModel=anormaly_detection_response)
+            used_tokens = chatbot.get_last_used_token()
+            # print(response.has_abnormality, type(response.has_abnormality));exit()
+            # if response.has_abnormality == 'True':
+            #     print(f'Chatbot: double check... (used token: {used_tokens})')
+            #     chatbot_ans = make_double_check_response_prompt(response.has_abnormality, response.confidence, response.abnormal_index, response.abnormal_description)
+            #     stride_msg_helper.add_chatbot_message(chatbot_ans)
+            #     stride_msg_helper.add_user_message(double_check_prompt, [image_path], "high")
+            #     response = chatbot.chat(stride_msg_helper.get_message(), FormatModel=anormaly_detection_response)
             end_time = time.time()
             used_tokens = chatbot.get_last_used_token()
 
@@ -256,7 +299,8 @@ for data_id in data_id_list:
                 'image': image_path,
                 'labels': str(label_index),
                 'abnormal_index': response.abnormal_index,
-                'abnormal_type': response.abnormal_type,
+                # 'abnormal_type': response.abnormal_type,
+                'has_abnormality': response.has_abnormality,
                 'abnormal_description': response.abnormal_description,
                 'confidence': response.confidence,
                 'normal_reference': {
@@ -266,51 +310,17 @@ for data_id in data_id_list:
                 }
                 
             }
+            if cnt > 5:
+                break
+    # 7.save log
+    yaml.dump({data_id: logger[data_id]}, log_file)
 
 # 7. save log  
-with open(os.path.join(log_save_path, f'{dataset_name}_log.yaml'), 'w') as f:
-    yaml.dump(logger, f)
+# with open(os.path.join(log_save_path, f'{dataset_name}_log.yaml'), 'w') as f:
+#     yaml.dump(logger, f)
+
 print(f'Total num: {total_num}, Total time: {sum(time_list):.3f}s, Average time: {(sum(time_list)/(len(time_list))):.3f}s')
 used_tokens = chatbot.get_used_token()
 print(f'Used tokens: {used_tokens}')
 cost = used_tokens['total_tokens'] / 1000000 * 5
 print(f'Cost: {cost:.2f} USD') 
-# for data_id in data_id_list:
-#     data_id_info = dataset.get_data_id_info(data_id)
-#     num_stride = data_id_info['num_stride']
-#     data_channels = data_id_info['data_channels']
-#     label_channels = data_id_info['label_channels']
-#     logger[data_id] = {}
-#     for i in range(num_stride):
-#         logger[data_id][i] = {}
-#         for ch in range(data_channels):
-#             image_path = dataset.get_image(data_id, i, ch)
-#             image_label = dataset.get_label(data_id, i, ch)
-#             label_index = np.where(image_label == 1)[0].tolist()
-
-#             # Chat with the chatbot
-#             start_time = time.time()
-#             base64_img = chatbot.image_encoder_base64(image_path)
-#             message_content = make_message_content(base64_img)
-#             response = chatbot.chat(message_content)
-#             end_time = time.time()
-
-#             processing_time = end_time - start_time
-#             time_list.append(processing_time)
-#             cnt += 1
-#             print(f'[{cnt}/{total_num}]>> id: {data_id}, num_stride {i}, channel: {ch} done --> TIME: {processing_time:.3f}s')
-
-#             # logger
-#             logger[data_id][i][ch] = {
-#                 'data_id': data_id,
-#                 'num_stride': i,
-#                 'data_channel': ch,
-#                 'image': image_path,
-#                 'labels': str(label_index),
-#                 'abnormal_index': response.abnormal_index,
-#                 'abnormal_type': response.abnormal_type,
-#                 'abnormal_description': response.abnormal_description
-#             }        
-#             # if cnt == 10:
-#             #     break  
-
