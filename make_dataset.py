@@ -105,6 +105,34 @@ dataset_config = {
             'aux_enable': True,
         }
     },
+    'NormA': { 
+        'sample_rate': 1,
+        'normalization_enable': True,
+        'window': 4500,
+        'stride': 1500,
+        'drop_last': False,
+        'image_config': {
+            'width': 1800,
+            'height': 400,
+            'x_ticks': 100,
+            'dpi': 100,
+            'aux_enable': True,
+        }
+    },
+    'NASA-MSL':{ 
+        'sample_rate': 1,
+        'normalization_enable': True,
+        'window': 1200,
+        'stride': 400,
+        'drop_last': False,
+        'image_config': {
+            'width': 1800,
+            'height': 400,
+            'x_ticks': 50,
+            'dpi': 100,
+            'aux_enable': True,
+        }
+    },
 }
 if __name__ == '__main__':
     # configuration

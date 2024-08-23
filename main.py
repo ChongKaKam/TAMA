@@ -222,6 +222,19 @@ def find_normal_reference(dataset_name, data_id, channel)->list:
             image_path = os.path.join(normal_ref_base, data_id, 'test', 'image', f'{i}-0.png')
             image_list.append(image_path)
         return image_list
+    elif dataset_name == 'KDD-TSAD':
+        image_list = []
+        image_num = 1
+        image_path = os.path.join(f'/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/KDD-TSAD/{data_id}/test/image/0-0.png')
+        image_list.append(image_path)
+        return image_list
+    elif dataset_name == 'NormA':
+        image_list = []
+        image_num = 3
+        for i in [0,2,4]:
+            image_path = os.path.join(normal_ref_base, data_id, 'test', 'image', f'{i}-0.png')
+            image_list.append(image_path)
+        return image_list
     else:
         raise ValueError(f'Unknown dataset name: {dataset_name}')
         

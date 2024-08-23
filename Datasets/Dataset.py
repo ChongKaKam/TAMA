@@ -726,6 +726,9 @@ class EvalDataLoader:
             # [globa_index, channel]
             ch_global_pred_array = np.zeros(data_shape)
             ch_global_label_array = np.zeros(data_shape)
+            if data_channels == 1:
+                ch_global_pred_array = ch_global_pred_array.reshape(-1, 1)
+                ch_global_label_array = ch_global_label_array.reshape(-1, 1)
             for ch in range(data_channels):
                 for stride_idx in range(num_stride):
                     if stride_idx not in self.output_log[data_id]:

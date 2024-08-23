@@ -4,7 +4,7 @@ import make_dataset
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 # configuration
-dataset_name = 'UCR'
+dataset_name = 'NormA'
 vote_thres = 2
 point_adjust_enable = True
 plot_enable = False
