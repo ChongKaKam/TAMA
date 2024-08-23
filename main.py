@@ -252,10 +252,11 @@ for data_id in data_id_list:
             if i not in logger[data_id]:
                 logger[data_id][i] = {}
             stride_msg_helper = message_helper.copy_message()
-            if f"{data_id}-{i}-{ch}" not in refined_data_id_list:
-                print(f'[{cnt}/{total_num}]>> id: {data_id}, num_stride {i}, channel: {ch} done, Used tokens: {0} --> TIME: 0.0s')
-                cnt += 1
-                continue
+            if refined or balanced:
+                if f"{data_id}-{i}-{ch}" not in refined_data_id_list:
+                    print(f'[{cnt}/{total_num}]>> id: {data_id}, num_stride {i}, channel: {ch} done, Used tokens: {0} --> TIME: 0.0s')
+                    cnt += 1
+                    continue
             image_path = dataset.get_image(data_id, i, ch)
             image_label = dataset.get_label(data_id, i, ch)
             label_index = np.where(image_label == 1)[0].tolist()

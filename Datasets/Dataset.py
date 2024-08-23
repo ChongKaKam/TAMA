@@ -480,10 +480,14 @@ class ProcessedDataset:
         if refined:
             if balanced:
                 for id in structure.keys():
-                    temp_pos = structure[id]['abnormal']
-                    pos_len = len(temp_pos)
-                    pos += temp_pos
-                    neg += random.sample(structure[id]['normal'], pos_len)
+                    pos_len = len(structure[id]['abnormal'])
+                    neg_len = len(structure[id]['normal'])
+                    if neg_len < pos_len:
+                        neg += structure[id]['normal']
+                        pos += random.sample(structure[id]['abnormal'], neg_len)
+                    else:
+                        pos += structure[id]['abnormal']
+                        neg += random.sample(structure[id]['normal'], pos_len)
                 pos = random.sample(pos, int(len(pos)*ratio))
                 neg = random.sample(neg, int(len(neg)*ratio))
             else:
@@ -493,14 +497,21 @@ class ProcessedDataset:
         else:
             if balanced:
                 for id in structure.keys():
-                    temp_pos = structure[id]['abnormal']
-                    pos_len = len(temp_pos)
-                    pos += temp_pos
-                    neg += random.sample(structure[id]['normal'], pos_len)
+                    pos_len = len(structure[id]['abnormal'])
+                    neg_len = len(structure[id]['normal'])
+                    if neg_len < pos_len:
+                        neg += structure[id]['normal']
+                        pos += random.sample(structure[id]['abnormal'], neg_len)
+                    else:
+                        pos += structure[id]['abnormal']
+                        neg += random.sample(structure[id]['normal'], pos_len)
             else:
+                pos = 0
+                neg = 0
                 for id in structure.keys():
-                    pos += structure[id]['abnormal']
-                    neg += structure[id]['normal']
+                    pos += len(structure[id]['abnormal'])
+                    neg += len(structure[id]['normal'])
+                print(f"Positive: {pos}, Negative: {neg}")
         return pos, neg
 
 
