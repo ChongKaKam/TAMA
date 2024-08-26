@@ -50,18 +50,21 @@ Now we are in the "Task1" part: I will give you some "normal reference" time ser
 Please help me extract some valuable information from them to help me find the abnormality in the following time series data slices.
 The output should include some structured information:
     - normal_value_range: The normal value range of the time series. The format should be like "[min, max]".
-    - normal_pattern: Try to describe the pattern of all "normal references" to help me find the abnormality in the following as best as possible. All normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion. Please pay attention to it. (The words of output should be 200-300 words).
+    - normal_pattern: Try to describe the pattern of all "normal references" . All normal reference data slices are from the same data channel but in different strides. The abnormal pattern caused by truncation might be found at the begining and end of the sequence, do not pay too much attention to them. (The words of output should be 200-300 words). The description should cover at least the following aspects:
+        + period
+        + stationarity
+        + shape
+        + a possible decomposition of the time series
 Last, please double check before you submit your answer.
 '''
 class normal_reference_response(BaseModel):
-    normal_value_range: str = Field(description='The normal value range of the time series. The format should be like "[min, max]".')
+    # normal_value_range: str = Field(description='The normal value range of the time series. The format should be like "[min, max]".')
     normal_pattern: str = Field(description='Try to describe the pattern of all "normal references" to help me find the abnormality in the following as best as possible. The words of output should be 200-300 words.')
 
 
-def make_normal_reference_response_prompt(normal_value_range, normal_pattern):
+def make_normal_reference_response_prompt(normal_pattern):
     assistant_response_prompt = f'''
     The answer of "Task1" part is as follows: 
-        - normal_value_range (the range of sequence may float at a slight level, so the range is not fixed, but the range should be in the same level): {normal_value_range}
         - normal_pattern: {normal_pattern}
     '''
     
@@ -88,10 +91,10 @@ Please help me find the abnormality in this time series data slice and provide s
 The output should include some structured information:
     - has_abnormality: Whether there is an abnormality in the time series data slice. The value should be "True" or "False".
     - abnormal_index: The abnormality index of the time series. There are some requirements:
-        + the output format should be like "[(start1, end1), (start2, end2), ...]", if there are some single outliers, the output should be "[(index1), (index2), ...]",if there is no abnormality, you can say "[]". The final output should can be mixed with these three formats.
         + Since the x-axis in the image only provides a limited number of tick marks, in order to improve the accuracy of your prediction, please try to estimate the coordinates of any anomaly locations based on the tick marks shown in the image as best as possible.
         + all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
         + all normal reference is a slice of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
+        + the output format should be like "[(start1, end1)/confidence_1, (start2, end2)/confidence_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1, (index2)/confidence_2, ...]",if there is no abnormality, you can say "[]". The final output should can be mixed with these three formats.
     - abnormal_description: Make a brief description of the abnormality, why do you think it is abnormal? 
     - confidence: The confidence of your prediction. The value should be a integer between 1 and 4 which represents the confidence level of your prediction. Each level of confidence is explained as follows:
         + 1: No confidence: I am not sure about my prediction
@@ -102,9 +105,9 @@ Last, please double check before you submit your answer.
 '''
 class anormaly_detection_response(BaseModel):
         has_abnormality: str = Field(description="Whether there is an abnormality in the time series data slice. The value should be 'True' or 'False'.")
-        abnormal_index: str = Field(description="the output format should be like '[(start1, end1), (start2, end2), ...]', if there are some single outliers, the output should be '[(index1), (index2), ...]',if there is no abnormality, you can say '[]'. The final output should can be mixed with these three formats.")
+        abnormal_index: str = Field(description="The output format should be like '[(start1, end1)/confidence_1, (start2, end2)/confidence_2, ...]', if there are some single outliers, the output should be '[(index1)/confidence_1, (index2)/confidence_2, ...]',if there is no abnormality, you can say '[]'. The final output should can be mixed with these three formats.")
         abnormal_description: str = Field(description="Make a brief description of the abnormality, why do you think it is abnormal?")
-        confidence: int = Field(description="confidence: The confidence of your prediction. The value should be a integer between 1 and 4 which represents the confidence level of your prediction.")
+        confidence: int = Field(description="Confidence: The confidence of your prediction. The value should be a integer between 1 and 4 which represents the confidence level of your prediction.")
 
 double_check_prompt = '''
 based on your response, you believe there is a abnormality in this data slice. I will give you a high resultion image to help you double check.
@@ -258,7 +261,7 @@ for data_id in data_id_list:
         NR_response = chatbot.chat(message_helper.get_message(), FormatModel=normal_reference_response)
         used_tokens = chatbot.get_used_token()
         print(f'New Channel: Normal Reference Used tokens: {used_tokens}')
-        normal_reference_knowledge = make_normal_reference_response_prompt(NR_response.normal_value_range, NR_response.normal_pattern)
+        normal_reference_knowledge = make_normal_reference_response_prompt(NR_response.normal_pattern)
         message_helper.add_chatbot_message(normal_reference_knowledge)
         # anormaly detection
         for i in range(num_stride):
@@ -319,7 +322,7 @@ for data_id in data_id_list:
                 'confidence': response.confidence,
                 'normal_reference': {
                     'normal_image_list': str(normal_reference_image_list),
-                    'normal_range': NR_response.normal_value_range,
+                    # 'normal_range': NR_response.normal_value_range,
                     'normal_pattern': NR_response.normal_pattern
                 }
                 

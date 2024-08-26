@@ -7,8 +7,10 @@ MakeDataset.py
 output
 data
 log
+SOTA
 main-old.py
 dataset.yaml
+*.sh
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

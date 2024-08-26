@@ -94,13 +94,13 @@ dataset_config = {
     'KDD-TSAD': { # 17281
         'sample_rate': 1,
         'normalization_enable': True,
-        'window': 10000,
-        'stride': 5000,
+        'window': 1200,
+        'stride': 400,
         'drop_last': False,
         'image_config': {
             'width': 1800,
             'height': 400,
-            'x_ticks': 500,
+            'x_ticks': 10,
             'dpi': 100,
             'aux_enable': True,
         }
@@ -108,13 +108,13 @@ dataset_config = {
     'NormA': { 
         'sample_rate': 1,
         'normalization_enable': True,
-        'window': 4500,
-        'stride': 1500,
+        'window': 900,
+        'stride': 300,
         'drop_last': False,
         'image_config': {
-            'width': 1800,
+            'width': 2000,
             'height': 400,
-            'x_ticks': 100,
+            'x_ticks': 5,
             'dpi': 100,
             'aux_enable': True,
         }
@@ -122,13 +122,27 @@ dataset_config = {
     'NASA-MSL':{ 
         'sample_rate': 1,
         'normalization_enable': True,
-        'window': 1200,
-        'stride': 400,
+        'window': 600,
+        'stride': 200,
         'drop_last': False,
         'image_config': {
             'width': 1800,
             'height': 400,
-            'x_ticks': 50,
+            'x_ticks': 10,
+            'dpi': 100,
+            'aux_enable': True,
+        }
+    },
+    'NASA-SMAP':{ 
+        'sample_rate': 1,
+        'normalization_enable': True,
+        'window': 600,
+        'stride': 200,
+        'drop_last': False,
+        'image_config': {
+            'width': 1800,
+            'height': 400,
+            'x_ticks': 10,
             'dpi': 100,
             'aux_enable': True,
         }
