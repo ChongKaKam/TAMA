@@ -32,7 +32,7 @@ class BigModelBase:
         raise NotImplementedError
 
     # chat, if fail, try again
-    def chat_retry(self, message, max_try=5, wait_time=2):
+    def chat_retry(self, message, max_try=3, wait_time=0.5):
         for t in range(max_try):
             try:
                 response = self.chat(message)
