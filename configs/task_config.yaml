@@ -1,45 +1,10 @@
-dataset_name: 'NormA'
-data_id_list: []
-refined: True
-balanced: True
-ratio: 0.1
+dataset_name: 'NASA-SMAP'
+data_id_list:  []
+refined: False
+balanced: False
+ratio: 1
 
-# processed_data_path: '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/' # ZJX
 processed_data_path: '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output'
 # processed_data_path: '/home/ysc/workspace/VisualTimeSeries/output/test-1-300'
 # log_save_path: '/home/ysc/workspace/VisualTimeSeries/output/log'
-# log_save_path: '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log' # ZJX
 log_save_path: '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log'
-
-# normal reference lookups
-# data_id --> channel --> image_path
-normal_reference:
-  # data: # UCR
-  #   135: 
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/135/train/image/0-0.png'
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/135/train/image/1-0.png'
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/135/train/image/2-0.png'
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/135/train/image/3-0.png'
-  #   136: 
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/136/train/image/0-0.png'
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/136/train/image/1-0.png'
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/136/train/image/2-0.png'
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/136/train/image/3-0.png'
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/136/train/image/4-0.png'
-  #   137: 
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/137/train/image/0-0.png'
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/137/train/image/1-0.png'
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/137/train/image/2-0.png'
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/137/train/image/3-0.png'
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/137/train/image/4-0.png'
-  #   138: 
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/138/train/image/0-0.png'
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/138/train/image/1-0.png'
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/138/train/image/2-0.png'
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/138/train/image/3-0.png'
-  #     - '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/UCR/138/train/image/4-0.png'
-  
-  # machine-1-1:
-  #   0: '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/SMD/machine-1-1/train/image/6-0.png'
-  # machine-2-2:
-  #   0: '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/SMD/machine-2-2/train/image/0-0.png'
