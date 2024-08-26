@@ -4,15 +4,15 @@ import make_dataset
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 # configuration
-dataset_name = 'NormA'
-vote_thres = 2
+dataset_name = 'NASA-MSL'
+vote_thres = 3
 point_adjust_enable = True
-plot_enable = False
+plot_enable = True
 channel_shared = False
 # processed_data_root = f'./output/'
 processed_data_root = f'./output/'
 # log_root = f'./log/'
-log_root = f'./log/'
+log_root = f'./log/NASA-MSL-History/NASA-MSL-0_2_4_6_8'
 image_config= {
     'width': 2000,
     'height': 480,

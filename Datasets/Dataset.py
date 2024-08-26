@@ -599,24 +599,55 @@ class EvalDataLoader:
             return list(map(int, info.strip('[]').split(',')))
         
     def abnormal_index_to_range(self, info:str):
-        pattern_range = r'\(\d+,\s\d+\)'
-        pattern_single = r'\(\d+\)'
+        pattern_range = r'\(\d+,\s\d+\)/\d'
+        pattern_single = r'\(\d+\)/\d'
         if info == '[]':
             return [[]]
         else:
             abnormal_ranges = re.findall(pattern_range, info)
             range_list = []
-            for range_tuple in abnormal_ranges:
+            for range_tuple_confidence in abnormal_ranges:
+                range_tuple, confidence = range_tuple_confidence.split('/')
                 range_tuple = range_tuple.strip('()')
                 start, end = map(int, range_tuple.split(','))
-                range_list.append((start, end))
+                confidence = int(confidence)
+                range_list.append((start, end, confidence))
             abnomral_singles = re.findall(pattern_single, info)
-            for single_point in abnomral_singles:
+            for single_point_confidence in abnomral_singles:
+                single_point, confidence = single_point_confidence.split('/')
                 single_point = single_point.strip('()')
-                range_list.append((int(single_point),))
+                confidence = int(confidence)
+                single_point = int(single_point)
+                range_list.append((single_point,confidence))
             return range_list
         
-    def map_window_index_to_global_index(self, window_index, offset:int=0):
+    def map_pred_window_index_to_global_index(self, window_index, offset:int=0):
+        global_index_set = set()
+        for start_end_confidence in window_index:
+            if isinstance(start_end_confidence, tuple) or isinstance(start_end_confidence, list):
+                # (A, B, C) or (A, C) or [A, B, C] or [A, C]
+                if len(start_end_confidence) == 0:
+                    continue
+                elif len(start_end_confidence) == 2:
+                    point, confidence = start_end_confidence
+                    if confidence <= 2:
+                        continue
+                    # single point
+                    global_index_set.add(point+offset)
+                elif len(start_end_confidence) == 3:
+                    # a range of points
+                    start, end, confidence = start_end_confidence
+                    if confidence <= 2:
+                        continue
+                    for i in range(start, end+1):
+                        global_index_set.add(i+offset)
+                else:
+                    raise ValueError(f"Invalid abnormal index format: {start_end_confidence}")
+            else:
+                global_index_set.add(start_end_confidence+offset)
+        return global_index_set
+    
+    def map_label_window_index_to_global_index(self, window_index, offset:int=0):
         global_index_set = set()
         for start_end in window_index:
             if isinstance(start_end, tuple) or isinstance(start_end, list):
@@ -635,6 +666,38 @@ class EvalDataLoader:
                     raise ValueError(f"Invalid abnormal index format: {start_end}")
             else:
                 global_index_set.add(start_end+offset)
+        global_index_set = list(global_index_set)
+        global_index_set.sort()
+        return global_index_set
+    
+    def map_pred_window_index_to_global_index_with_confidence(self, window_index, offset:int=0):
+        global_index_set = {confidence: set() for confidence in range(1, 5)}
+        for start_end_confidence in window_index:
+            if isinstance(start_end_confidence, tuple) or isinstance(start_end_confidence, list):
+                # (A, B, C) or (A, C) or [A, B, C] or [A, C]
+                if len(start_end_confidence) == 0:
+                    continue
+                elif len(start_end_confidence) == 2:
+                    point, confidence = start_end_confidence
+                    # single point
+                    if confidence not in global_index_set:
+                        continue
+                    global_index_set[confidence].add(point+offset)
+                elif len(start_end_confidence) == 3:
+                    # a range of points
+                    start, end, confidence = start_end_confidence
+                    for i in range(start, end+1):
+                        if confidence not in global_index_set:
+                            continue
+                        global_index_set[confidence].add(i+offset)
+                else:
+                    raise ValueError(f"Invalid abnormal index format: {start_end_confidence}")
+            else:
+                # global_index_set[confidence].add(start_end_confidence+offset)
+                raise ValueError(f"Invalid abnormal index format: {start_end_confidence}")
+        for confidence in global_index_set:
+            global_index_set[confidence] = list(global_index_set[confidence])
+            global_index_set[confidence].sort()
         return global_index_set
 
     def set_plot_config(self, width:int, height:int, dpi:int, x_ticks:int, aux_enable:bool=False):
@@ -673,6 +736,37 @@ class EvalDataLoader:
         pred_ranges = self.get_fill_ranges(pred_points)
         for start, end in pred_ranges:
             ax.fill_between(range(start, end), np.min(data), np.max(data), color='green', alpha=alpha, label='pred' if start == pred_ranges[0][0] else '')
+        label_points = np.where(label == 1)[0].tolist()
+        label_ranges = self.get_fill_ranges(label_points)
+        for start, end in label_ranges:
+            ax.fill_between(range(start, end), np.min(data), np.max(data), color='red', alpha=alpha, label='label' if start == label_ranges[0][0] else '')
+
+        ax.legend()
+        ax.set_xticks(range(0, len(data)+1, self.plot_default_config['x_ticks']))
+        ax.set_xlim(0, len(data)+1)
+        plt.xticks(rotation=90)
+        ax.set_title(image_name)
+        fig.tight_layout(w_pad=0.1, h_pad=0)
+        plt.savefig(os.path.join(self.eval_image_path, f"{image_name}.png"))
+        plt.close()
+    
+    def plot_figure_with_confidence(self, data, label, pred_points:dict, image_name:str):
+        figsize = (self.plot_default_config['width']/self.plot_default_config['dpi'], self.plot_default_config['height']/self.plot_default_config['dpi'])
+        fig, ax = plt.subplots(figsize=figsize, dpi=self.plot_default_config['dpi'])
+        ax.plot(data, label='data')
+
+        alpha = 0.2
+        # for point in pred:
+        #     ax.fill_between([point, point+0.6], np.min(data), np.max(data), color='green', alpha=alpha, label='pred' if point == pred[0] else '')
+        
+        # label_points = np.where(label == 1)[0]
+        # for point in label_points:
+        #     ax.fill_between([point, point+0.6], np.min(data), np.max(data), color='orange', alpha=alpha, label='label' if point == label_points[0] else '')
+        color_map = {1: 'gray', 2: 'blue', 3: 'yellow', 4: 'green'}
+        for confidence in pred_points:
+            pred_ranges = self.get_fill_ranges(pred_points[confidence])
+            for start, end in pred_ranges:
+                ax.fill_between(range(start, end), np.min(data), np.max(data), color=color_map[confidence], alpha=alpha, label=f'pred(confidence={confidence})' if start == pred_ranges[0][0] else '')
         label_points = np.where(label == 1)[0].tolist()
         label_ranges = self.get_fill_ranges(label_points)
         for start, end in label_ranges:
@@ -742,12 +836,12 @@ class EvalDataLoader:
                     abnormal_description = item['abnormal_description']
                     image_path = item['image']
                     confidence = int(item['confidence'])
-                    if confidence <= 3:
-                        abnormal_index = []
+                    # if confidence <= 3:
+                    #     abnormal_index = []
                     # map to global index
                     offset = stride_idx * stride
-                    abnormal_point_set = self.map_window_index_to_global_index(abnormal_index, offset)
-                    label_point_set = self.map_window_index_to_global_index(labels, offset)
+                    abnormal_point_set = self.map_pred_window_index_to_global_index(abnormal_index, offset)
+                    label_point_set = self.map_label_window_index_to_global_index(labels, offset)
                     # mark point    
                     for label_point in label_point_set:
                         if label_point < ch_global_label_array.shape[0]:    # 
@@ -759,13 +853,9 @@ class EvalDataLoader:
                     if plot_enable:
                         plot_data = self.processed_dataset.get_data(data_id, stride_idx, ch)
                         plot_label = self.processed_dataset.get_label(data_id, stride_idx, ch)
-                        plot_pred = list(self.map_window_index_to_global_index(abnormal_index, 0))
-                        plot_pred.sort()
-                        if data_id == '137' and stride_idx in [7,8,9,10]:
-                            print(f'{data_id}_{stride_idx}_{ch}')
-                            print(plot_pred)
-                            print(plot_label)
-                        self.plot_figure(plot_data, plot_label, plot_pred, f"{data_id}_{stride_idx}_{ch}")
+                        plot_pred = self.map_pred_window_index_to_global_index_with_confidence(abnormal_index, 0)
+                        # print(plot_pred)
+                        self.plot_figure_with_confidence(plot_data, plot_label, plot_pred, f"{data_id}_{stride_idx}_{ch}")
                 
                 # vote in channel
                 ch_global_pred_array[:, ch] = (ch_global_pred_array[:, ch] >= vote_thres).astype(int)
