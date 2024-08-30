@@ -3,7 +3,8 @@ import os
 import re
 import numpy as np
 import matplotlib.pyplot as plt
-
+from tabulate import tabulate
+from sklearn.metrics import auc, roc_curve, roc_auc_score
 '''
 Tools: Register the dataset
 Info:  Read datsets in root_path and record key information in dataset.yaml
@@ -599,25 +600,31 @@ class EvalDataLoader:
             return list(map(int, info.strip('[]').split(',')))
         
     def abnormal_index_to_range(self, info:str):
-        pattern_range = r'\(\d+,\s\d+\)/\d'
-        pattern_single = r'\(\d+\)/\d'
+        # (start, end)/confidence/abnormal_type
+        pattern_range = r'\(\d+,\s\d+\)/\d/[a-z]+'
+        pattern_single = r'\(\d+\)/\d/[a-z]+'
+        # pattern_range = r'\(\d+,\s\d+\)/\d'
+        # pattern_single = r'\(\d+\)/\d'
         if info == '[]':
             return [[]]
         else:
             abnormal_ranges = re.findall(pattern_range, info)
             range_list = []
+            type_list = []
             for range_tuple_confidence in abnormal_ranges:
-                range_tuple, confidence = range_tuple_confidence.split('/')
+                range_tuple, confidence, abnormal_type = range_tuple_confidence.split('/')
                 range_tuple = range_tuple.strip('()')
                 start, end = map(int, range_tuple.split(','))
                 confidence = int(confidence)
+                type_list.append(abnormal_type)
                 range_list.append((start, end, confidence))
             abnomral_singles = re.findall(pattern_single, info)
             for single_point_confidence in abnomral_singles:
-                single_point, confidence = single_point_confidence.split('/')
+                single_point, confidence, abnormal_type = single_point_confidence.split('/')
                 single_point = single_point.strip('()')
                 confidence = int(confidence)
                 single_point = int(single_point)
+                type_list.append(abnormal_type)
                 range_list.append((single_point,confidence))
             return range_list
         
@@ -831,11 +838,13 @@ class EvalDataLoader:
                         continue
                     item = self.output_log[data_id][stride_idx][ch]
                     labels = self.label_to_list(item['labels'])
+                    if 'abnormal_index' not in item:
+                        item['abnormal_index'] = '[]'
+                    item['abnormal_index'] = str(item['abnormal_index'])
                     abnormal_index = self.abnormal_index_to_range(item['abnormal_index'])
-                    # abnormal_type = item['abnormal_type']
                     abnormal_description = item['abnormal_description']
                     image_path = item['image']
-                    confidence = int(item['confidence'])
+                    # confidence = int(item['confidence'])
                     # if confidence <= 3:
                     #     abnormal_index = []
                     # map to global index
@@ -911,6 +920,433 @@ class EvalDataLoader:
         print(f"TP: {TP}, FP: {FP}, TN: {TN}, FN: {FN}")
         print(f"Accuracy: {accuracy:.3f}, Precision: {precision:.3f}, Recall: {recall:.3f}, F1_score: {F1_score:.3f}")
 
+'''
+New version of evaluator
+'''
+class Evaluator:
+    def __init__(self, dataset_name:str, stride_length:int, processed_data_root:str, log_root:str=DEFAULT_LOG_ROOT):
+        self.dataset_name = dataset_name
+        self.stride_length = stride_length
+        self.processed_data_root = processed_data_root
+        self.log_root = log_root
+        self.dataset_info = yaml.safe_load(open(DEFAULT_YAML_PATH, 'r'))[dataset_name]
+        self.processed_dataset = ProcessedDataset(os.path.join(processed_data_root, dataset_name), mode='test')
+        
+        log_file_path = os.path.join(log_root, f"{dataset_name}_log.yaml")
+        self.load_log_file(log_file_path)
+
+    def get_ranges_from_points(self, point_list:list, continue_thres:int=1):
+        if point_list == []:
+            return []
+        start_idx = point_list[0]
+        ranges_list = []
+        for i in range(1, len(point_list)):
+            if point_list[i] - point_list[i-1] > continue_thres:
+                ranges_list.append((start_idx, point_list[i-1]+1))
+                start_idx = point_list[i]
+        ranges_list.append((start_idx, point_list[-1]+1))
+        return ranges_list
+
+    def decode_label(self, label:str):
+        if label == '[]':
+            return []
+        else:
+            label_point_list =  list(map(int, label.strip('[]').split(',')))
+            return label_point_list
+    
+    def decode_abnormal_prediction(self, log_item:dict, channel:int, offset:int=0):
+        pattern_range = r'\(\d+,\s\d+\)/\d/[a-z]+'
+        pattern_single = r'\(\d+\)/\d/[a-z]+'
+        abnormal_index = str(log_item['abnormal_index'])
+        double_check_index = log_item.get('double_check', {'fixed_abnormal_index': '[]'})
+        fixed_abnormal_index = double_check_index.get('fixed_abnormal_index', '[]')
+        output_dict = {
+            'prediction': [],
+            'double_check': [],
+        }
+
+        # prediction of ranges
+        abnormal_ranges = re.findall(pattern_range, abnormal_index)
+        for item in abnormal_ranges:
+            range_tuple, confidence, abnormal_type = item.split('/')
+            range_tuple = range_tuple.strip('()')
+            start, end = map(int, range_tuple.split(','))
+            confidence = int(confidence)
+            pred = {
+                'channel': channel,
+                'start': start+offset,
+                'end': end+offset,
+                'confidence': confidence,
+                'type': abnormal_type,
+            }
+            output_dict['prediction'].append(pred)
+        # prediction of single points
+        abnormal_singles = re.findall(pattern_single, abnormal_index)
+        for item in abnormal_singles:
+            single_point, confidence, abnormal_type = item.split('/')
+            single_point = single_point.strip('()')
+            confidence = int(confidence)
+            single_point = int(single_point)
+            pred = {
+                'channel': channel,
+                'start': single_point+offset,
+                'end': single_point+1+offset,  # range(single_pint, single_point+1) == [single_point]
+                'confidence': confidence,
+                'type': abnormal_type,
+            }
+            output_dict['prediction'].append(pred)
+        # double check of ranges
+        double_check_ranges = re.findall(pattern_range, fixed_abnormal_index)
+        for item in double_check_ranges:
+            range_tuple, confidence, abnormal_type = item.split('/')
+            range_tuple = range_tuple.strip('()')
+            start, end = map(int, range_tuple.split(','))
+            confidence = int(confidence)
+            pred = {
+                'channel': channel,
+                'start': start+offset,
+                'end': end+offset,
+                'confidence': confidence,
+                'type': abnormal_type,
+            }
+            output_dict['double_check'].append(pred)
+        # double check of single points
+        double_check_singles = re.findall(pattern_single, fixed_abnormal_index)
+        for item in double_check_singles:
+            single_point, confidence, abnormal_type = item.split('/')
+            single_point = single_point.strip('()')
+            confidence = int(confidence)
+            single_point = int(single_point)
+            pred = {
+                'channel': channel,
+                'start': single_point+offset,
+                'end': single_point+1+offset,  # range(single_pint, single_point+1) == [single_point]
+                'confidence': confidence,
+                'type': abnormal_type,
+            }
+            output_dict['double_check'].append(pred)
+        # output:
+        # prediction: [{'start': int, 'end': int, 'confidence': int, 'type': str}, ...]
+        # double_check: [{'start': int, 'end': int, 'confidence': int, 'type': str}, ...]
+        return output_dict
+
+    def load_log_file(self, log_file_path:str):
+        self.raw_log = yaml.safe_load(open(log_file_path, 'r'))
+        self.parsed_log = {}
+        for data_id in self.raw_log:
+            data_id_info = self.processed_dataset.get_data_id_info(data_id)
+            data_channels = data_id_info['data_channels']
+            num_stride = data_id_info['num_stride']
+            data_shape = self.dataset_info['file_list'][data_id]['test']
+            # [globa_index, channel]
+            self.parsed_log[data_id] = {}
+            self.parsed_log[data_id]['raw_data'] = np.zeros(data_shape).reshape(-1, data_channels)
+            self.parsed_log[data_id]['label'] = np.zeros(data_shape).reshape(-1, data_channels)
+            self.parsed_log[data_id]['prediction'] = []
+            self.parsed_log[data_id]['double_check'] = []
+            for ch in range(data_channels):
+                for stride_idx in range(num_stride):
+                    offset = int(stride_idx * self.stride_length)
+                    log_item = self.raw_log[data_id][stride_idx][ch]
+                    # raw
+                    raw_label = self.decode_label(log_item['labels'])
+                    raw_data = self.processed_dataset.get_data(data_id, stride_idx, ch)
+                    # map to global 
+                    for point in raw_label:
+                        self.parsed_log[data_id]['label'][point+offset, ch] = 1
+                    self.parsed_log[data_id]['raw_data'][offset:offset+len(raw_data), ch] = raw_data
+                    # get prediction and double_check
+                    parsed_dict = self.decode_abnormal_prediction(log_item, ch, offset)
+                    prediction_list = parsed_dict['prediction']
+                    double_check_list = parsed_dict['double_check']
+                    self.parsed_log[data_id]['prediction'] += prediction_list
+                    self.parsed_log[data_id]['double_check'] += double_check_list
+    
+    def calculate_roc_auc(self,data_id_list:list=[]):
+        # self.parsed_log:
+        #   - data_id
+        #      + raw_data: [global_index, channel]
+        #      + label: [global_index, channel]
+        #      + prediction: [{'channel': ch, 'start': int, 'end': int, 'confidence': int, 'type': str}, ...]
+        #      + double_check: ['channel': ch, 'start': int, 'end': int, 'confidence': int, 'type': str}, ...]
+        if data_id_list == []:
+            data_id_list = self.parsed_log.keys()
+        # auc
+        Precision_Recall_map = {
+            'Pred': [],
+            'Pred_adjust': [],
+            'DCheck': [],
+            'DCheck_adjust': [],
+        }
+        for conf in range(0,13):
+            res = self.calculate_f1_score(conf, data_id_list)
+            for key in res:
+                item = res[key]
+                TPR, FPR = self.get_tpr_fpr(item['TP'], item['FP'], item['TN'], item['FN'])
+                Precision_Recall_map[key].append((FPR, TPR))
+        # plot
+        fig, ax = plt.subplots(figsize=(6, 3))
+        for key in Precision_Recall_map:
+            auc_score = auc([x[0] for x in Precision_Recall_map[key]], [x[1] for x in Precision_Recall_map[key]])
+            ax.plot([x[0] for x in Precision_Recall_map[key]], [x[1] for x in Precision_Recall_map[key]], label=f'{key} (AUC={auc_score:.3f})', marker='x')
+        ax.legend()
+        ax.set_xlabel('FPR')
+        ax.set_ylabel('TPR')
+        ax.set_title(f"{self.dataset_name}-ROC curve")
+        fig.savefig(f"./{self.dataset_name}_ROC_curve.png", bbox_inches='tight')
+        plt.close()
+            
+    @staticmethod
+    def point_adjustment(results, labels):
+        """
+        Adjust anomaly detection results based on the ground-truth labels.
+        
+        Args:
+            results (np.ndarray): The anomaly detection results (0 or 1).
+            labels (np.ndarray): The ground-truth labels (0 or 1).
+        
+        Returns:
+            np.ndarray: The adjusted anomaly detection results.
+        """
+        adjusted_results = results.copy()
+        in_anomaly = False
+        start_idx = 0
+        
+        for i in range(len(labels)):
+            if labels[i] == 1 and not in_anomaly:
+                in_anomaly = True
+                start_idx = i
+            elif labels[i] == 0 and in_anomaly:
+                in_anomaly = False
+                if np.any(results[start_idx:i] == 1):
+                    adjusted_results[start_idx:i] = 1
+        
+        # Handle the case where the last segment is an anomaly
+        if in_anomaly and np.any(results[start_idx:] == 1):
+            adjusted_results[start_idx:] = 1
+        return adjusted_results
+
+    @staticmethod
+    def get_metrics(TP, FP, TN, FN):
+        accuracy = (TP + TN) / (TP + FP + TN + FN)
+        precision = TP / (TP + FP) if TP + FP != 0 else 0
+        recall = TP / (TP + FN) if TP + FN != 0 else 0
+        F1_score = 2 * precision * recall / (precision + recall) if precision + recall != 0 else 0
+        return accuracy, precision, recall, F1_score
+
+    @staticmethod
+    def get_tpr_fpr(TP, FP, TN, FN):
+        TPR = TP / (TP + FN) if TP + FN != 0 else 0
+        FPR = FP / (FP + TN) if FP + TN != 0 else 0
+        return TPR, FPR
+
+    def calculate_f1_score(self, confidence_thres, data_id_list:list=[]):
+        if data_id_list == []:
+            data_id_list = self.parsed_log.keys()
+        count_log = {}
+        
+        print(f"\nDataset: {self.dataset_name}, Confidence Threshold: {confidence_thres}")
+        for data_id in data_id_list:
+            count_log[data_id] = {
+                "pred": {
+                    "TP": 0,
+                    "FP": 0,
+                    "TN": 0,
+                    "FN": 0,
+                },
+                "pred_adjust": {
+                    "TP": 0,
+                    "FP": 0,
+                    "TN": 0,
+                    "FN": 0,
+                },
+                "double_check": {
+                    "TP": 0,
+                    "FP": 0,
+                    "TN": 0,
+                    "FN": 0,
+                },
+                "double_check_adjust": {
+                    "TP": 0,
+                    "FP": 0,
+                    "TN": 0,
+                    "FN": 0,
+                }
+            }
+            data_id_log = self.parsed_log[data_id]
+            raw_data = data_id_log['raw_data']  # raw data
+            raw_label = data_id_log['label']    # [0,1] label array
+            pred_list = data_id_log['prediction']
+            double_check_list = data_id_log['double_check']
+
+            # vote array
+            pred_vote_array = np.zeros(raw_data.shape)
+            # confidence array
+            pred_confidence_array = np.zeros(raw_data.shape)
+            # pred
+            for pred_item in pred_list:
+                ch = pred_item['channel']
+                start = pred_item['start']
+                end = pred_item['end']
+                confidence = pred_item['confidence']
+                type = pred_item['type']
+                # vote 
+                pred_vote_array[start:end, ch] += 1
+                # confidence
+                pred_confidence_array[start:end, ch] += confidence
+            
+            # vote array
+            double_check_vote_array = np.zeros(raw_data.shape)
+            # confidence array
+            double_check_confidence_array = np.zeros(raw_data.shape)
+            # double check
+            for doubel_check_item in double_check_list:
+                ch = doubel_check_item['channel']
+                start = doubel_check_item['start']
+                end = doubel_check_item['end']
+                confidence = doubel_check_item['confidence']
+                type = doubel_check_item['type']
+                # vote 
+                double_check_vote_array[start:end, ch] += 1
+                # confidence
+                double_check_confidence_array[start:end, ch] += confidence
+        
+            # threshold
+            pred_vote_array = (pred_confidence_array >= confidence_thres).astype(int)
+            double_check_vote_array = (double_check_confidence_array >= confidence_thres).astype(int)
+
+            # calculate F1 score for each data_id
+            for ch in range(raw_data.shape[1]):
+                TP = np.sum((pred_vote_array[:, ch] == 1) & (raw_label[:, ch] == 1))
+                FP = np.sum((pred_vote_array[:, ch] == 1) & (raw_label[:, ch] == 0))
+                TN = np.sum((pred_vote_array[:, ch] == 0) & (raw_label[:, ch] == 0))
+                FN = np.sum((pred_vote_array[:, ch] == 0) & (raw_label[:, ch] == 1))
+                count_log[data_id]['pred']['TP'] += TP
+                count_log[data_id]['pred']['FP'] += FP
+                count_log[data_id]['pred']['TN'] += TN
+                count_log[data_id]['pred']['FN'] += FN
+                acc, pre, rec, f1 = self.get_metrics(TP, FP, TN, FN)
+                # print(f"data_id: {data_id}, channel: {ch}")
+                # print(f"\tTP: {TP}, FP: {FP}, TN: {TN}, FN: {FN}")
+                # print(f"\tPrediction >> Acc: {acc:.3f}, Pre: {pre:.3f}, Rec: {rec:.3f}, F1: {f1:.3f}")
+                tabel_format = [
+                    ["Type", "TP", "FP", "TN", "FN", "Acc", "Pre", "Rec", "F1"],
+                    ["Pred", TP, FP, TN, FN, f"{acc:.3f}", f"{pre:.3f}", f"{rec:.3f}", f"{f1:.3f}"],
+                ]
+                # point-adjustment
+                point_adjusted_pred_array = self.point_adjustment(pred_vote_array[:, ch], raw_label[:, ch])
+                TP = np.sum((point_adjusted_pred_array == 1) & (raw_label[:, ch] == 1))
+                FP = np.sum((point_adjusted_pred_array == 1) & (raw_label[:, ch] == 0))
+                TN = np.sum((point_adjusted_pred_array == 0) & (raw_label[:, ch] == 0))
+                FN = np.sum((point_adjusted_pred_array == 0) & (raw_label[:, ch] == 1))
+                count_log[data_id]['pred_adjust']['TP'] += TP
+                count_log[data_id]['pred_adjust']['FP'] += FP
+                count_log[data_id]['pred_adjust']['TN'] += TN
+                count_log[data_id]['pred_adjust']['FN'] += FN
+                acc, pre, rec, f1 = self.get_metrics(TP, FP, TN, FN)
+                tabel_format.append(["Pred(adjust)", TP, FP, TN, FN, f"{acc:.3f}", f"{pre:.3f}", f"{rec:.3f}", f"{f1:.3f}"])
+
+                # double check
+                TP = np.sum((double_check_vote_array[:, ch] == 1) & (raw_label[:, ch] == 1))
+                FP = np.sum((double_check_vote_array[:, ch] == 1) & (raw_label[:, ch] == 0))
+                TN = np.sum((double_check_vote_array[:, ch] == 0) & (raw_label[:, ch] == 0))
+                FN = np.sum((double_check_vote_array[:, ch] == 0) & (raw_label[:, ch] == 1))
+                count_log[data_id]['double_check']['TP'] += TP
+                count_log[data_id]['double_check']['FP'] += FP
+                count_log[data_id]['double_check']['TN'] += TN
+                count_log[data_id]['double_check']['FN'] += FN
+                acc, pre, rec, f1 = self.get_metrics(TP, FP, TN, FN)
+                # print(f"data_id: {data_id}, channel: {ch}")
+                # print(f"\tTP: {TP}, FP: {FP}, TN: {TN}, FN: {FN}")
+                # print(f"\tDouble_check >> Acc: {acc:.3f}, Pre: {pre:.3f}, Rec: {rec:.3f}, F1: {f1:.3f}")
+                tabel_format.append(["DCheck", TP, FP, TN, FN, f"{acc:.3f}", f"{pre:.3f}", f"{rec:.3f}", f"{f1:.3f}"])
+
+                # point-adjustment
+                point_adjusted_double_check_array = self.point_adjustment(double_check_vote_array[:, ch], raw_label[:, ch])
+                TP = np.sum((point_adjusted_double_check_array == 1) & (raw_label[:, ch] == 1))
+                FP = np.sum((point_adjusted_double_check_array == 1) & (raw_label[:, ch] == 0))
+                TN = np.sum((point_adjusted_double_check_array == 0) & (raw_label[:, ch] == 0))
+                FN = np.sum((point_adjusted_double_check_array == 0) & (raw_label[:, ch] == 1))
+                count_log[data_id]['double_check_adjust']['TP'] += TP
+                count_log[data_id]['double_check_adjust']['FP'] += FP
+                count_log[data_id]['double_check_adjust']['TN'] += TN
+                count_log[data_id]['double_check_adjust']['FN'] += FN
+                acc, pre, rec, f1 = self.get_metrics(TP, FP, TN, FN)
+                tabel_format.append(["DCheck(adjust)", TP, FP, TN, FN, f"{acc:.3f}", f"{pre:.3f}", f"{rec:.3f}", f"{f1:.3f}"])
+
+                print(f"\ndata_id: {data_id}, channel: {ch}")
+                print(tabulate(tabel_format, headers='firstrow', tablefmt='fancy_grid'))
+
+        # calculate F1 score for all data_id
+        TP = sum([count_log[data_id]['pred']['TP'] for data_id in count_log])
+        FP = sum([count_log[data_id]['pred']['FP'] for data_id in count_log])
+        TN = sum([count_log[data_id]['pred']['TN'] for data_id in count_log])
+        FN = sum([count_log[data_id]['pred']['FN'] for data_id in count_log])
+        acc, pre, rec, f1 = self.get_metrics(TP, FP, TN, FN)
+        # print(f"All data_id: ")
+        # print(f"\tPrediction >> Acc: {acc:.3f}, Pre: {pre:.3f}, Rec: {rec:.3f}, F1: {f1:.3f}")
+        tabel_format = [
+            ["Type", "TP", "FP", "TN", "FN", "Acc", "Pre", "Rec", "F1"],
+            ["Pred", TP, FP, TN, FN, f"{acc:.3f}", f"{pre:.3f}", f"{rec:.3f}", f"{f1:.3f}"],
+        ]
+        Pred_item = {
+            "TP": TP,
+            "FP": FP,
+            "TN": TN,
+            "FN": FN,
+        }
+        # adjust
+        TP = sum([count_log[data_id]['pred_adjust']['TP'] for data_id in count_log])
+        FP = sum([count_log[data_id]['pred_adjust']['FP'] for data_id in count_log])
+        TN = sum([count_log[data_id]['pred_adjust']['TN'] for data_id in count_log])
+        FN = sum([count_log[data_id]['pred_adjust']['FN'] for data_id in count_log])
+        acc, pre, rec, f1 = self.get_metrics(TP, FP, TN, FN)
+        tabel_format.append(["Pred(adjust)", TP, FP, TN, FN, f"{acc:.3f}", f"{pre:.3f}", f"{rec:.3f}", f"{f1:.3f}"])
+        Pred_adjust_item = {
+            "TP": TP,
+            "FP": FP,
+            "TN": TN,
+            "FN": FN,
+        }
+        # double_check
+        TP = sum([count_log[data_id]['double_check']['TP'] for data_id in count_log])
+        FP = sum([count_log[data_id]['double_check']['FP'] for data_id in count_log])
+        TN = sum([count_log[data_id]['double_check']['TN'] for data_id in count_log])
+        FN = sum([count_log[data_id]['double_check']['FN'] for data_id in count_log])
+        acc, pre, rec, f1 = self.get_metrics(TP, FP, TN, FN)
+        # print(f"All data_id: ")
+        # print(f"Double_check >> Acc: {acc:.3f}, Pre: {pre:.3f}, Rec: {rec:.3f}, F1: {f1:.3f}")
+        tabel_format.append(["DCheck", TP, FP, TN, FN, f"{acc:.3f}", f"{pre:.3f}", f"{rec:.3f}", f"{f1:.3f}"])
+        DCheck_item = {
+            "TP": TP,
+            "FP": FP,
+            "TN": TN,
+            "FN": FN,
+        }
+        # adjust
+        TP = sum([count_log[data_id]['double_check_adjust']['TP'] for data_id in count_log])
+        FP = sum([count_log[data_id]['double_check_adjust']['FP'] for data_id in count_log])
+        TN = sum([count_log[data_id]['double_check_adjust']['TN'] for data_id in count_log])
+        FN = sum([count_log[data_id]['double_check_adjust']['FN'] for data_id in count_log])
+        acc, pre, rec, f1 = self.get_metrics(TP, FP, TN, FN)
+        tabel_format.append(["DCheck(adjust)", TP, FP, TN, FN, f"{acc:.3f}", f"{pre:.3f}", f"{rec:.3f}", f"{f1:.3f}"])
+        DCheck_adjust_item = {
+            "TP": TP,
+            "FP": FP,
+            "TN": TN,
+            "FN": FN,
+        }
+        # output
+        output_metrics = {
+            "Pred": Pred_item,
+            "Pred_adjust": Pred_adjust_item,
+            "DCheck": DCheck_item,
+            "DCheck_adjust": DCheck_adjust_item,
+        }
+        print(f"\nAll data_id: ")
+        print(tabulate(tabel_format, headers='firstrow', tablefmt='fancy_grid'))
+        return output_metrics
+        
 if __name__ == '__main__':
     # check_shape('MSL')
     AutoRegister()
