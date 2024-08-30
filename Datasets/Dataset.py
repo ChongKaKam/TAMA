@@ -1061,43 +1061,9 @@ class Evaluator:
                     double_check_list = parsed_dict['double_check']
                     self.parsed_log[data_id]['prediction'] += prediction_list
                     self.parsed_log[data_id]['double_check'] += double_check_list
-    
-    def calculate_roc_auc(self,data_id_list:list=[]):
-        # self.parsed_log:
-        #   - data_id
-        #      + raw_data: [global_index, channel]
-        #      + label: [global_index, channel]
-        #      + prediction: [{'channel': ch, 'start': int, 'end': int, 'confidence': int, 'type': str}, ...]
-        #      + double_check: ['channel': ch, 'start': int, 'end': int, 'confidence': int, 'type': str}, ...]
-        if data_id_list == []:
-            data_id_list = self.parsed_log.keys()
-        # auc
-        Precision_Recall_map = {
-            'Pred': [],
-            'Pred_adjust': [],
-            'DCheck': [],
-            'DCheck_adjust': [],
-        }
-        for conf in range(0,13):
-            res = self.calculate_f1_score(conf, data_id_list)
-            for key in res:
-                item = res[key]
-                TPR, FPR = self.get_tpr_fpr(item['TP'], item['FP'], item['TN'], item['FN'])
-                Precision_Recall_map[key].append((FPR, TPR))
-        # plot
-        fig, ax = plt.subplots(figsize=(6, 3))
-        for key in Precision_Recall_map:
-            auc_score = auc([x[0] for x in Precision_Recall_map[key]], [x[1] for x in Precision_Recall_map[key]])
-            ax.plot([x[0] for x in Precision_Recall_map[key]], [x[1] for x in Precision_Recall_map[key]], label=f'{key} (AUC={auc_score:.3f})', marker='x')
-        ax.legend()
-        ax.set_xlabel('FPR')
-        ax.set_ylabel('TPR')
-        ax.set_title(f"{self.dataset_name}-ROC curve")
-        fig.savefig(f"./{self.dataset_name}_ROC_curve.png", bbox_inches='tight')
-        plt.close()
-            
+
     @staticmethod
-    def point_adjustment(results, labels):
+    def point_adjustment(results, labels, thres_percentage:float=0.0):
         """
         Adjust anomaly detection results based on the ground-truth labels.
         
@@ -1118,7 +1084,10 @@ class Evaluator:
                 start_idx = i
             elif labels[i] == 0 and in_anomaly:
                 in_anomaly = False
-                if np.any(results[start_idx:i] == 1):
+                # if np.any(results[start_idx:i] == 1):
+                #     adjusted_results[start_idx:i] = 1
+                thres = (i - start_idx) * thres_percentage
+                if np.sum(results[start_idx:i]) > thres:    # threshold
                     adjusted_results[start_idx:i] = 1
         
         # Handle the case where the last segment is an anomaly
@@ -1140,7 +1109,7 @@ class Evaluator:
         FPR = FP / (FP + TN) if FP + TN != 0 else 0
         return TPR, FPR
 
-    def calculate_f1_score(self, confidence_thres, data_id_list:list=[]):
+    def calculate_f1_score(self, confidence_thres=9, thres_percentage:float=0.0, data_id_list:list=[]):
         if data_id_list == []:
             data_id_list = self.parsed_log.keys()
         count_log = {}
@@ -1234,7 +1203,7 @@ class Evaluator:
                     ["Pred", TP, FP, TN, FN, f"{acc:.3f}", f"{pre:.3f}", f"{rec:.3f}", f"{f1:.3f}"],
                 ]
                 # point-adjustment
-                point_adjusted_pred_array = self.point_adjustment(pred_vote_array[:, ch], raw_label[:, ch])
+                point_adjusted_pred_array = self.point_adjustment(pred_vote_array[:, ch], raw_label[:, ch], thres_percentage)
                 TP = np.sum((point_adjusted_pred_array == 1) & (raw_label[:, ch] == 1))
                 FP = np.sum((point_adjusted_pred_array == 1) & (raw_label[:, ch] == 0))
                 TN = np.sum((point_adjusted_pred_array == 0) & (raw_label[:, ch] == 0))
@@ -1262,7 +1231,7 @@ class Evaluator:
                 tabel_format.append(["DCheck", TP, FP, TN, FN, f"{acc:.3f}", f"{pre:.3f}", f"{rec:.3f}", f"{f1:.3f}"])
 
                 # point-adjustment
-                point_adjusted_double_check_array = self.point_adjustment(double_check_vote_array[:, ch], raw_label[:, ch])
+                point_adjusted_double_check_array = self.point_adjustment(double_check_vote_array[:, ch], raw_label[:, ch], thres_percentage)
                 TP = np.sum((point_adjusted_double_check_array == 1) & (raw_label[:, ch] == 1))
                 FP = np.sum((point_adjusted_double_check_array == 1) & (raw_label[:, ch] == 0))
                 TN = np.sum((point_adjusted_double_check_array == 0) & (raw_label[:, ch] == 0))
@@ -1346,7 +1315,105 @@ class Evaluator:
         print(f"\nAll data_id: ")
         print(tabulate(tabel_format, headers='firstrow', tablefmt='fancy_grid'))
         return output_metrics
-        
+    
+    def calculate_roc_pr_auc(self,data_id_list:list=[]):
+        # self.parsed_log:
+        #   - data_id
+        #      + raw_data: [global_index, channel]
+        #      + label: [global_index, channel]
+        #      + prediction: [{'channel': ch, 'start': int, 'end': int, 'confidence': int, 'type': str}, ...]
+        #      + double_check: ['channel': ch, 'start': int, 'end': int, 'confidence': int, 'type': str}, ...]
+        if data_id_list == []:
+            data_id_list = self.parsed_log.keys()
+        # auc
+        TPR_FPR_map = {
+            'Pred': [],
+            'Pred_adjust': [],
+            'DCheck': [],
+            'DCheck_adjust': [],
+        }
+        PR_map = {
+            'Pred': [],
+            'Pred_adjust': [],
+            'DCheck': [],
+            'DCheck_adjust': [],
+        }
+        for conf in range(0,13):
+            res = self.calculate_f1_score(conf, data_id_list=data_id_list)
+            for key in res:
+                item = res[key]
+                TPR, FPR = self.get_tpr_fpr(item['TP'], item['FP'], item['TN'], item['FN'])
+                TPR_FPR_map[key].append((FPR, TPR))
+                acc, pre, rec, f1 = self.get_metrics(item['TP'], item['FP'], item['TN'], item['FN'])
+                PR_map[key].append((rec, pre))
+        # plot ROC curve
+        fig, ax = plt.subplots(figsize=(8, 5))
+        for key in TPR_FPR_map:
+            auc_score = auc([x[0] for x in TPR_FPR_map[key]], [x[1] for x in TPR_FPR_map[key]])
+            ax.plot([x[0] for x in TPR_FPR_map[key]], [x[1] for x in TPR_FPR_map[key]], label=f'{key} (AUC={auc_score:.3f})', marker='x')
+        ax.legend()
+        ax.set_xlabel('FPR')
+        ax.set_ylabel('TPR')
+        ax.set_xlim(0, 1.05)
+        ax.set_ylim(0, 1.05)
+        ax.set_xticks(np.arange(0, 1.05, 0.1))
+        ax.set_yticks(np.arange(0, 1.05, 0.1))
+        ax.grid(True, linestyle='--', color='lightgray', linewidth=0.5)
+        ax.set_title(f"{self.dataset_name}-ROC curve")
+        fig.savefig(f"./{self.dataset_name}_ROC_curve.png", bbox_inches='tight')
+        plt.close()
+        # plot PR curve
+        fig, ax = plt.subplots(figsize=(7, 5))
+        for key in PR_map:
+            recall_list = [x[0] for x in PR_map[key]]
+            recall_list.append(0)
+            precision_list = [x[1] for x in PR_map[key]]
+            precision_list.append(1)
+            auc_score = auc(recall_list, precision_list)
+            ax.plot(recall_list, precision_list, label=f'{key} (AUC={auc_score:.3f})', marker='x')
+        ax.legend()
+        ax.set_xlabel('Recall')
+        ax.set_ylabel('Precision')
+        ax.set_xlim(0, 1.05)
+        ax.set_ylim(0, 1.05)
+        ax.set_xticks(np.arange(0, 1.05, 0.1))
+        ax.set_yticks(np.arange(0, 1.05, 0.1))
+        ax.grid(True, linestyle='--', color='lightgray', linewidth=0.5)
+        ax.set_title(f"{self.dataset_name}-PR curve")
+        fig.savefig(f"./{self.dataset_name}_PR_curve.png", bbox_inches='tight')
+        plt.close()
+
+    def calculate_adjust_PR_curve_auc(self, data_id_list:list=[]):
+        if data_id_list == []:
+            data_id_list = self.parsed_log.keys()
+        # auc
+        PR_map = {
+            'Pred': [],
+            'Pred_adjust': [],
+            'DCheck': [],
+            'DCheck_adjust': [],
+        }
+        default_confidence_thres = 9
+        for thres_percentage in np.arange(0, 1.05, 0.05):
+            print(thres_percentage)
+            res = self.calculate_f1_score(default_confidence_thres, thres_percentage, data_id_list)
+            for key in res:
+                item = res[key]
+                acc, pre, rec, f1 = self.get_metrics(item['TP'], item['FP'], item['TN'], item['FN'])
+                PR_map[key].append((rec, pre))
+        # plot PR curve
+        fig, ax = plt.subplots(figsize=(6, 3))
+        for key in PR_map:
+            auc_score = auc([x[0] for x in PR_map[key]], [x[1] for x in PR_map[key]])
+            ax.plot([x[0] for x in PR_map[key]], [x[1] for x in PR_map[key]], label=f'{key} (AUC={auc_score:.3f})', marker='x')
+            # print(f"{key} >> {PR_map[key]}")
+        ax.legend()
+        ax.set_xlabel('Recall')
+        ax.set_ylabel('Precision')
+        ax.set_title(f"{self.dataset_name}-PR curve (point-adjustment)")
+        fig.savefig(f"./{self.dataset_name}_PR_curve_point_adjustment.png", bbox_inches='tight')
+        plt.close()
+
 if __name__ == '__main__':
     # check_shape('MSL')
     AutoRegister()

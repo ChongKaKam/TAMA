@@ -51,4 +51,5 @@ config = {
 
 evaluator = Evaluator(dataset_name, stride, processed_data_root, config[dataset_name]['log_root'])
 # evaluator.calculate_f1_score(confidence_thres=9, data_id_list=config[dataset_name]['data_id_list'])
-evaluator.calculate_roc_auc(config[dataset_name]['data_id_list'])
+evaluator.calculate_roc_pr_auc(config[dataset_name]['data_id_list'])
+# evaluator.calculate_adjust_PR_curve_auc(config[dataset_name]['data_id_list'])
