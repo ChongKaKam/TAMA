@@ -6,7 +6,7 @@ from BigModel.Base import BigModelBase
 class Chat_AzureGPT4o(BigModelBase):
     def __init__(self, max_tokens=1024, temperature=0.1, top_p=0.5):
         super().__init__(max_tokens, temperature, top_p)
-        self.tokens_per_minute = 80000
+        self.tokens_per_minute = 75000
         self.credential = AzureCliCredential()
         self.token_provider = get_bearer_token_provider(
             self.credential,
