@@ -9,6 +9,9 @@ import base64
 from PIL import Image
 import argparse
 import csv
+import re
+import matplotlib.pyplot as plt
+import sys
 
 from BigModel.Base import BigModelBase
 from BigModel.Azure import Chat_AzureGPT4o
@@ -22,6 +25,8 @@ def args_parse():
     parser.add_argument('--dataset', type=str, default='NormA', help='Dataset name')
     parser.add_argument('--refined', default=False, action='store_true')
     parser.add_argument('--balanced', default=False, action='store_true')
+    parser.add_argument('--double_check', default=False, action='store_true')
+    parser.add_argument('--normal_reference', type=int, default=3, required=False)
     parser.add_argument('--ratio', type=float, default=1.0, required=False)
     parser.add_argument('--data_id_list', type=str, default='', help='Data id list')
     args = parser.parse_args()
@@ -53,6 +58,17 @@ class MessageHelper:
         }
         for image_path in image_path_list:
             image_base64 = self.image_base64_encode(image_path)
+            new_message['content'].append({
+                "type": "image_url", 
+                "image_url": {"url": f"data:image/png;base64,{image_base64}", "detail": "high"},
+            })
+        self.message_list.append(new_message)
+    def add_message_with_base64(self, role:str, text:str, image_base64_list:list=[]):
+        new_message = {
+            'role': role,
+            'content': [{"type": "text", "text": text}],
+        }
+        for image_base64 in image_base64_list:
             new_message['content'].append({
                 "type": "image_url", 
                 "image_url": {"url": f"data:image/png;base64,{image_base64}", "detail": "high"},
@@ -154,7 +170,7 @@ class ChatController:
             'prompt_tokens': 0,
             'total_tokens': 0
         }
-        self.start_time = 0
+        self.start_time = time.time()
         self.sample_time_usage = []
     def start_timming(self):
         self.start_time = time.time()
@@ -179,11 +195,13 @@ class ChatController:
         if self.reset_minute_timing:
             self.used_tokens_in_minute = 0
             self.reset_minute_timing = False
+            print(f'slepp for {sleep_time} s...')
             time.sleep(sleep_time)
             self.start_timming()
-    def chat_with_rate_control(self, message:list, max_retry:int=3)->dict:
+    def chat_with_rate_control(self, message:list, max_retry:int=6)->dict:
         # chat with retry
-        for _ in range(max_retry):
+        pause_retry = max_retry // 2
+        for retry_times in range(max_retry):
             try:
                 sample_time_start = time.time()
                 self.last_used_token = 0
@@ -199,7 +217,10 @@ class ChatController:
                 self.sample_time_usage.append(sample_time_end - sample_time_start)
                 return parsed_response
             except Exception as e:
-                print(f'Error: {e}, try again.')
+                print(f'Error: {e}, try again. {retry_times}/{max_retry}')
+                if retry_times == pause_retry:
+                    print('There is something wrong, please check it and press any key to continue...', file=sys.stderr)
+                    input('There is something wrong, please check it and press any key to continue...')
 
     def show_sample_time_usage_statistics(self):
         sample_time_usage = np.array(self.sample_time_usage)
@@ -258,34 +279,47 @@ Now we are in "Task2", you are expected to detect the abnormality in the given d
 <Target>: 
 Please help me find the abnormality in this time series data slice and provide some structured information.
 The output should include some structured information, please output in JSON format:
-    - has_abnormality (string, answer "True" or "False"): Whether there is an abnormality in the time series data slice. The value should be "True" or "False".
-    - abnormal_index (the output format should be like "[(start1, end1)/confidence_1, (start2, end2)/confidence_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1, (index2)/confidence_2, ...]",if there is no abnormality, you can say "[]". The final output should can be mixed with these three formats.): The abnormality index of the time series. There are some requirements:
+    - abnormal_index (the output format should be like "[(start1, end1)/confidence_1/abnormal_type_1, (start2, end2)/confidence_2/abnormal_type_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1/abnormal_type_1, (index2)/confidence_2/abnormal_type_2, ...]",if there is no abnormality, you can say "[]". The final output should can be mixed with these three formats.): The abnormality index of the time series. There are some requirements:
         + There may be multiple abnormalities in one stride, please try to find all of them. Pay attention to the range of each abnormality, the range should cover each whole abnormality in a suitable range.
         + Since the x-axis in the image only provides a limited number of tick marks, in order to improve the accuracy of your prediction, please try to estimate the coordinates of any anomaly locations based on the tick marks shown in the image as best as possible.
         + all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
-        + all normal reference is a slice of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
+        + abnormal_type(answer from "none", "global", "contextual", "seasonal", "trend", "contextual"): The abnormality type of the time series, choose from [none, shapelet, seasonal, trend]. The detailed explanation is as follows:
+            + none: No abnormality
+            + global: Global outliers refer to the points that significantly deviate from the rest of the points. 
+            + contextual: Contextual outliers are the points that deviate from its corresponding context, which is defined as the neighboring time points within certain ranges.
+            + shapelet: Shapelet outliers refer to the subsequences with dissimilar basic shapelets compared with the normal shapelet
+            + seasonal: Seasonal outliers are the subsequences with unusual seasonalities compared with the overall seasonality
+            + trend: Trend outliers indicate the subsequences that significantly alter the trend of the time series, leading to a permanent shift on the mean of the data.
+        - confidence (integer, from 1 to 4): The confidence of your prediction. The value should be a integer between 1 and 4 which represents the confidence level of your prediction. Each level of confidence is explained as follows:
+            + 1: No confidence: I am not sure about my prediction
+            + 2: Low confidence: Weak evidence supports my prediction 
+            + 3: medium confidence: strong evidence supports my prediction
+            + 4: high confidence: more than 95% of the evidence supports my prediction
+        + based on the provided abnormal_type, you should double check the abnormal_index.
     - abnormal_description (a 200-300 words paragraph): Make a brief description of the abnormality, why do you think it is abnormal? 
-    - abnormal_type(string, answer from "none", "global", "contextual", "seasonal", "trend", "contextual"): The abnormality type of the time series, choose from [none, shapelet, seasonal, trend]. The detailed explanation is as follows:
-        + none: No abnormality
-        + global: Global outliers refer to the subsequences with dissimilar patterns compared with the normal reference
-        + contextual: Contextual outliers refer to the subsequences with dissimilar patterns compared with the local context
-        + shapelet: Shapelet outliers refer to the subsequences with dissimilar basic shapelets compared with the normal shapelet
-        + seasonal: Seasonal outliers are the subsequences with unusual seasonalities compared with the overall seasonality
-        + trend: Trend outliers indicate the subsequences that significantly alter the trend of the time series, leading to a permanent shift on the mean of the data.
-    - abnormal_type_description (a 200-300 words paragraph): Make a brief description of the abnormality type, why do you think this type is suitable for the abnormality?
-    - confidence (this must be an integer from 1 to 4): The confidence of your prediction. The value should be a integer between 1 and 4 which represents the confidence level of your prediction. Each level of confidence is explained as follows:
-        + 1: No confidence: I am not sure about my prediction
-        + 2: Low confidence: Weak evidence supports my prediction 
-        + 3: medium confidence: strong evidence supports my prediction
-        + 4: high confidence: more than 95% of the evidence supports my prediction
+    - abnormal_type_description (a 200-300 words paragraph): Make a brief description of the abnormality type for each prediction, why do you think this type is suitable for the abnormality?
 Last, please double check before you submit your answer.
 '''
-def make_normal_reference_response_prompt(normal_pattern):
-    assistant_response_prompt = f'''
+def make_normal_reference_response_text(normal_pattern):
+    assistant_response_text = f'''
     The answer of "Task1" part is as follows: 
         - normal_pattern: {normal_pattern}
     '''
-    return assistant_response_prompt
+    return assistant_response_text
+
+def make_anormaly_detection_response_text(parsed_respon:dict):
+    abnormal_index = parsed_respon['abnormal_index'] if 'abnormal_index' in parsed_respon else '[]'
+    abnormal_description = parsed_respon['abnormal_description'] if 'abnormal_description' in parsed_respon else ''
+    abnormal_type_description = parsed_respon['abnormal_type_description'] if 'abnormal_type_description' in parsed_respon else ''
+    # confidence = parsed_respon['confidence'] if 'confidence' in parsed_respon else 0
+    assistant_response_text = f'''
+    The answer of "Task2" part is as follows: 
+        - abnormal_index: {abnormal_index}
+        - abnormal_description: {abnormal_description}
+        - abnormal_type_description: {abnormal_type_description}
+    '''
+    return assistant_response_text
+
 # double check
 double_check_prompt = '''
 <Background>: 
@@ -301,35 +335,20 @@ Now, I will give you some "normal reference" and you are expected to double chec
 
 <Target>:
 The prediction of another assistant contains some information as flows:
-    - has_abnormality: Whether there is an abnormality in the time series data slice. The value should be "True" or "False".
-    - abnormal_index: The abnormality index of the time series. The output format should be like "[(start1, end1)/confidence_1, (start2, end2)/confidence_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1, (index2)/confidence_2, ...]",if there is no abnormality, you can say "[]".
+    - abnormal_index: The abnormality index of the time series. The output format should be like "[(start1, end1)/confidence_1/abnormal_type_1, (start2, end2)/confidence_2/abnormal_type_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1/abnormal_type_1, (index2)/confidence_2/abnormal_type_2, ...]",if there is no abnormality, you can say "[]".
     - abnormal_description: Make a brief description of the abnormality, why do you think it is abnormal?
-    - confidence: The confidence of your prediction. 
-Prediction of another assistant:
-    - has_abnormality: {has_abnormality}
-    - abnormal_index: {abnormal_index}
-    - abnormal_description: {abnormal_description}
-    - confidence: {confidence}
 Based on the "nomral reference" I gave you, please read the prediction above and double check the prediction. If you find any mistakes, please correct them. The output should include some structured information, please output in JSON format:
-    - is_correct: Whether the prediction is correct. The value should be "True" or "False". 
-    - fixed_abnormal_index (the output format should be like "[(start1, end1)/confidence_1, (start2, end2)/confidence_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1, (index2)/confidence_2, ...]",if there is no abnormality, you can say "[]". The final output should can be mixed with these three formats.): The abnormality index of the time series. There are some requirements:
-        + If the prediction is correct, please keep it. If you find mistakes, such as "not suitable range", "missing some abnormality", "wrong abnormality type", please correct them. 
-        + Since the x-axis in the image only provides a limited number of tick marks, in order to improve the accuracy of your prediction, please try to estimate the coordinates of any anomaly locations based on the tick marks shown in the image as best as possible.
-        + all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
-        + all normal reference is a slice of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
+    - fixed_abnormal_index (string, the output format should be like "[(start1, end1)/confidence_1/abnormal_type_1, (start2, end2)/confidence_2/abnormal_type_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1/abnormal_type_1, (index2)/confidence_2/abnormal_type_2, ...]",if there is no abnormality, you can say "[]". The final output should can be mixed with these three formats.): The abnormality index of the time series. There are some requirements:
+        + 1. you should check each predoicion of the abnormal_type and make sure it is correct based on the abnormality index. If there is a incorrect prediction, you should rmove it.
+        + 2. you should check each prediction of the abnormal_index according to the image I gave to you. If there is a abnormal in image but not in the prediction, you should add it. The format should keep the same as the original prediction.
     - The reason why you think the prediction is correct or incorrect. (a 200-300 words paragraph): Make a brief description of your double check, why do you think the prediction is correct or incorrect?
-    - confidence (this must be an integer from 1 to 4): The confidence of your prediction. The value should be a integer between 1 and 4 which represents the confidence level of your prediction. Each level of confidence is explained as follows:
-        + 1: No confidence: I am not sure about my prediction
-        + 2: Low confidence: Weak evidence supports my prediction 
-        + 3: medium confidence: strong evidence supports my prediction
-        + 4: high confidence: more than 95% of the evidence supports my prediction
 '''
 def make_double_check_prompt(parsed_respon:dict):
-    has_abnormality = parsed_respon['has_abnormality'] if 'has_abnormality' in parsed_respon else 'True'
+    # has_abnormality = parsed_respon['has_abnormality'] if 'has_abnormality' in parsed_respon else 'True'
     abnormal_index = parsed_respon['abnormal_index'] if 'abnormal_index' in parsed_respon else '[]'
     abnormal_description = parsed_respon['abnormal_description'] if 'abnormal_description' in parsed_respon else 'there is no abnormality'
     confidence = parsed_respon['confidence'] if 'confidence' in parsed_respon else 0
-    prompt = double_check_prompt.format(has_abnormality=has_abnormality, abnormal_index=abnormal_index, abnormal_description=abnormal_description, confidence=confidence)
+    prompt = double_check_prompt.format(abnormal_index=abnormal_index, abnormal_description=abnormal_description, confidence=confidence)
     return prompt
 
 
@@ -340,8 +359,12 @@ if __name__ == '__main__':
     refined = args.refined
     balanced = args.balanced
     ratio = args.ratio
+    NormalReferenceNum = args.normal_reference
+    doubel_check_enable = args.double_check
     data_id_list = args.data_id_list
     print(f'dataset_name: {dataset_name}, refined: {refined}, balanced: {balanced}, ratio: {ratio}')
+    print(f'NormalReferenceNum: {NormalReferenceNum}, doubel_check_enable: {doubel_check_enable}')
+    # exit()
     # load dataset & normal reference helper
     log_save_path = os.path.join('/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log', f'{dataset_name}_log.yaml')
     processed_data_path = '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output'
@@ -388,19 +411,20 @@ if __name__ == '__main__':
         label_channel = data_info['label_channels']
         detect_messager.clean_message()
         for ch in range(data_channel):
-            normal_reference_image_list = normal_reference_helper.find_normal_reference(data_id, ch)
-            detect_messager.add_user_message(normal_reference_prompt, normal_reference_image_list)
-            # print(normal_reference_image_list)
-            # continue
-            normal_reference_response = chat_controller.chat_with_rate_control(detect_messager.get_message())
-            print(f'data_id: {data_id}, channel: {ch}, normal_reference_token_usage: {chat_controller.get_last_used_token()} >> Time: {chat_controller.get_last_sample_time_usage():.2f}s')
-            normal_pattern = str(normal_reference_response['normal_pattern'])
-            normal_reference_response_prompt = make_normal_reference_response_prompt(normal_pattern)
-            detect_messager.add_chatbot_answer(normal_reference_response_prompt)
+            if NormalReferenceNum > 0:
+                normal_reference_image_list = normal_reference_helper.find_normal_reference(data_id, ch, NormalReferenceNum)
+                detect_messager.add_user_message(normal_reference_prompt, normal_reference_image_list)
+                # print(normal_reference_image_list)
+                # continue
+                normal_reference_response = chat_controller.chat_with_rate_control(detect_messager.get_message())
+                print(f'data_id: {data_id}, channel: {ch}, normal_reference_token_usage: {chat_controller.get_last_used_token()} >> Time: {chat_controller.get_last_sample_time_usage():.2f}s')
+                normal_pattern = str(normal_reference_response['normal_pattern'])
+                normal_reference_response_prompt = make_normal_reference_response_text(normal_pattern)
+                detect_messager.add_chatbot_answer(normal_reference_response_prompt)
             # for each stride
             for stride_idx in range(num_stride):
                 stride_msg_helper = detect_messager.copy_message()
-                double_checker_msg_helper = detect_messager.copy_message()
+                # stride_msg_helper = detect_messager.copy_message()
                 if refined or balanced:
                     if f'{data_id}-{stride_idx}-{ch}' not in refined_data_id_list:
                         continue
@@ -412,10 +436,69 @@ if __name__ == '__main__':
                 stride_response = chat_controller.chat_with_rate_control(stride_msg_helper.get_message())
                 print(f'[{sample_cnt}/{total_sample_num}]>> data_id: {data_id}, stride: {stride_idx}, channel: {ch}, stride_token_usage: {chat_controller.get_last_used_token()} >> Time: {chat_controller.get_last_sample_time_usage():.2f}s')
                 # double check
-                double_check_prompt = make_double_check_prompt(stride_response)
-                double_checker_msg_helper.add_user_message(double_check_prompt, [image_path])
-                double_check_response = chat_controller.chat_with_rate_control(double_checker_msg_helper.get_message())
-                print(f'[{sample_cnt}/{total_sample_num}]>> data_id: {data_id}, stride: {stride_idx}, channel: {ch}, double_check_token_usage: {chat_controller.get_last_used_token()} >> Time: {chat_controller.get_last_sample_time_usage():.2f}s')
+                response_abnormal_index = stride_response.get('abnormal_index', '[]')
+                double_check_response = None
+                if doubel_check_enable and response_abnormal_index != '[]':
+                    # pattern_range = r'\(\d+,\s\d+\)/\d/[a-z]+'
+                    # pattern_single = r'\(\d+\)/\d/[a-z]+'
+                    # check_ranges = re.findall(pattern_range, stride_response['abnormal_index'])
+                    # check_single = re.findall(pattern_single, stride_response['abnormal_index'])
+                    # check_list = []
+                    # base64_list = []
+                    # for item in check_ranges:
+                    #     index_range, confidence, index_type = item.split('/')
+                    #     start, end = map(int, index_range.strip('()').split(','))
+                    #     center = (start + end) // 2
+                    #     check_list.append(center)
+                    # for item in check_single:
+                    #     index, confidence, index_type = item.split('/')
+                    #     check_list.append(int(index))
+                    # for check_idx in check_list:
+                    #     data_for_check = dataset.get_data(data_id, stride_idx, ch)
+                    #     window_length = data_for_check.shape[0]
+                    #     if check_idx > 2*window_length//3:
+                    #         data_for_check = data_for_check[window_length//3:]
+                    #         xticks_start = window_length//3
+                    #         xticks_end = window_length + 1
+                    #     elif check_idx < window_length//3:
+                    #         data_for_check = data_for_check[:int(2*window_length//3)]
+                    #         xticks_start = 0
+                    #         xticks_end = 2*window_length//3 + 1
+                    #     else:
+                    #         data_for_check = data_for_check[check_idx-window_length//3:check_idx+window_length//3]
+                    #         xticks_start = check_idx - window_length//3
+                    #         xticks_end = check_idx + window_length//3 + 1
+                    data = dataset.get_data(data_id, stride_idx, ch)
+                    window_length = data.shape[0]
+                    xticks_start_list = [0, window_length//3]
+                    xticks_end_list = [2*window_length//3, window_length]
+                    base64_list = []
+                    for check_idx in range(2):
+                        xticks_start = xticks_start_list[check_idx]
+                        xticks_end = xticks_end_list[check_idx]
+                        data_for_check = data[xticks_start:xticks_end]
+                        data_for_check = data_for_check.reshape(-1)
+                        fig, ax = plt.subplots(figsize=(15, 4), dpi=100)
+                        xticks = 5
+                        for x in range(0, len(data_for_check)+1, xticks):
+                            ax.axvline(x, color='gray', linestyle='--', linewidth=0.5)
+                        ax.plot(data_for_check, color='blue')
+                        plt.xticks(rotation=90)
+                        ax.set_xticks(range(0, len(data_for_check)+1, xticks))
+                        ax.set_xticklabels(range(xticks_start, xticks_end+1, xticks))
+                        fig.tight_layout(pad=0.1)
+                        buffer = io.BytesIO()
+                        fig.savefig(buffer, format='png', bbox_inches='tight')
+                        # fig.savefig('./test.png', bbox_inches='tight')
+                        image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                        base64_list.append(image_base64)
+                        plt.close(fig)
+                    double_check_msg_helper = stride_msg_helper.copy_message()
+                    double_check_msg_helper.add_chatbot_answer(make_anormaly_detection_response_text(stride_response))
+                    double_check_prompt = make_double_check_prompt(stride_response)
+                    double_check_msg_helper.add_message_with_base64('user', double_check_prompt, base64_list)
+                    double_check_response = chat_controller.chat_with_rate_control(double_check_msg_helper.get_message())
+                    print(f'Double check >> check_idx: {check_idx}, double_check_token_usage: {chat_controller.get_last_used_token()} >> Time: {chat_controller.get_last_sample_time_usage():.2f}s')
                 # log
                 log_item = {
                     'data_id': data_id,
@@ -424,25 +507,29 @@ if __name__ == '__main__':
                     'image': image_path,
                     'labels': str(label_index),
                     'abnormal_index': stride_response['abnormal_index'] if 'abnormal_index' in stride_response else '[]',
-                    # 'abnormal_type': response.abnormal_type,
-                    'has_abnormality': stride_response['has_abnormality'] if 'has_abnormality' in stride_response else 'False',
+                    'abnormal_type_description': stride_response['abnormal_type_description'] if 'abnormal_type_description' in stride_response else '',
                     'abnormal_description': stride_response['abnormal_description'] if 'abnormal_description' in stride_response else '',
-                    'confidence': stride_response['confidence'] if 'confidence' in stride_response else 0,
                     'normal_reference': {
-                        'normal_image_list': str(normal_reference_image_list),
-                        # 'normal_range': NR_response.normal_value_range,
-                        'normal_pattern': normal_pattern
+                        'normal_image_list': str([]),
+                        'normal_pattern': ""
                     },
-                    'double_check': {
-                        'is_correct': double_check_response['is_correct'] if 'is_correct' in double_check_response else 'False',
-                        'fixed_abnormal_index': double_check_response['fixed_abnormal_index'] if 'fixed_abnormal_index' in double_check_response else '[]',
-                        'reason': double_check_response['reason'] if 'reason' in double_check_response else '',
-                        'confidence': double_check_response['confidence'] if 'confidence' in double_check_response else 0,
-                    }
+                    'double_check': {}
                 }
+                if NormalReferenceNum > 0:
+                    log_item['normal_reference'] = {
+                        'normal_image_list': str(normal_reference_image_list),
+                        'normal_pattern': normal_pattern
+                    }
+                if doubel_check_enable:
+                    if double_check_response is not None:
+                        log_item['double_check'] = {
+                            # 'is_correct': double_check_response['is_correct'] if 'is_correct' in double_check_response else 'False',
+                            'fixed_abnormal_index': double_check_response['fixed_abnormal_index'] if 'fixed_abnormal_index' in double_check_response else '[]',
+                            'reason': double_check_response['reason'] if 'reason' in double_check_response else '',
+                        }
                 logger.log(data_id, stride_idx, ch, log_item)
                 sample_cnt += 1
-                # if sample_cnt == 2:
+                # if sample_cnt == 3:
                 #     logger.save()
                 #     chat_controller.show_sample_time_usage_statistics()
                 #     exit()
