@@ -438,7 +438,7 @@ class RawDataset:
     '''
     def convert_data(self, output_dir:str, mode:str, window_size:int, stride:int, convertor_class:ConvertorBase, 
                      image_config:dict={}, drop_last:bool=True, data_id_list:list=[]):
-        import yaml
+        data_id_list = [] if data_id_list == [''] else data_id_list
         dataset_output_dir = os.path.join(output_dir, self.dataset_name)
         self.ensure_dir(dataset_output_dir)
         if self.dataset_info['type'] == 'centralized' or self.dataset_info['type'] == 'distributed':
@@ -450,6 +450,7 @@ class RawDataset:
         structure = {}
         for id in id_list:
             id = str(id)
+            # print(f'id: {id}')
             # self.make(dataset_output_dir, id, mode, window_size, stride, convertor_class, image_config=image_config, drop_last=drop_last)
             id_idx_list = self.separate_label_make(dataset_output_dir, id, mode, window_size, stride, convertor_class, image_config=image_config, drop_last=drop_last)
             structure[id] = id_idx_list
@@ -463,6 +464,7 @@ Proccessed Data Loader
 class ProcessedDataset:
     def __init__(self, dataset_path:str, mode:str='train'):
         self.dataset_path = dataset_path
+        # print(f"Dataset Path: {dataset_path}");exit()
         self.id_list = list(filter(lambda x: os.path.isdir(os.path.join(dataset_path, x)), os.listdir(dataset_path)))
         self.id_list.sort()
         self.background = open(os.path.join(dataset_path, 'background.txt'), 'r').read()
@@ -924,13 +926,17 @@ class EvalDataLoader:
 New version of evaluator
 '''
 class Evaluator:
-    def __init__(self, dataset_name:str, stride_length:int, processed_data_root:str, log_root:str=DEFAULT_LOG_ROOT):
+    def __init__(self, dataset_name:str, stride_length:int, processed_data_root:str, log_root:str=DEFAULT_LOG_ROOT, processed_path_name:str=''):
         self.dataset_name = dataset_name
         self.stride_length = stride_length
         self.processed_data_root = processed_data_root
         self.log_root = log_root
         self.dataset_info = yaml.safe_load(open(DEFAULT_YAML_PATH, 'r'))[dataset_name]
-        self.processed_dataset = ProcessedDataset(os.path.join(processed_data_root, dataset_name), mode='test')
+        if processed_path_name == '':
+            name = dataset_name
+        else:
+            name = processed_path_name
+        self.processed_dataset = ProcessedDataset(os.path.join(processed_data_root, name), mode='test')
         
         log_file_path = os.path.join(log_root, f"{dataset_name}_log.yaml")
         self.load_log_file(log_file_path)
@@ -1047,6 +1053,9 @@ class Evaluator:
             for ch in range(data_channels):
                 for stride_idx in range(num_stride):
                     offset = int(stride_idx * self.stride_length)
+                    if stride_idx not in self.raw_log[data_id]:
+                        continue
+                    # print(data_id, stride_idx, ch, self.raw_log[data_id].keys())
                     log_item = self.raw_log[data_id][stride_idx][ch]
                     # raw
                     raw_label = self.decode_label(log_item['labels'])
@@ -1109,12 +1118,12 @@ class Evaluator:
         FPR = FP / (FP + TN) if FP + TN != 0 else 0
         return TPR, FPR
 
-    def calculate_f1_score(self, confidence_thres=9, thres_percentage:float=0.0, data_id_list:list=[]):
+    def calculate_TP_FP_TN_FN(self, confidence_thres=9, thres_percentage:float=0.0, data_id_list:list=[], show_results:bool=False):
         if data_id_list == []:
             data_id_list = self.parsed_log.keys()
         count_log = {}
         
-        print(f"\nDataset: {self.dataset_name}, Confidence Threshold: {confidence_thres}")
+        # print(f"\nDataset: {self.dataset_name}, Confidence Threshold: {confidence_thres}")
         for data_id in data_id_list:
             count_log[data_id] = {
                 "pred": {
@@ -1242,9 +1251,9 @@ class Evaluator:
                 count_log[data_id]['double_check_adjust']['FN'] += FN
                 acc, pre, rec, f1 = self.get_metrics(TP, FP, TN, FN)
                 tabel_format.append(["DCheck(adjust)", TP, FP, TN, FN, f"{acc:.3f}", f"{pre:.3f}", f"{rec:.3f}", f"{f1:.3f}"])
-
-                print(f"\ndata_id: {data_id}, channel: {ch}")
-                print(tabulate(tabel_format, headers='firstrow', tablefmt='fancy_grid'))
+                if show_results:
+                    print(f"\ndata_id: {data_id}, channel: {ch}")
+                    print(tabulate(tabel_format, headers='firstrow', tablefmt='fancy_grid'))
 
         # calculate F1 score for all data_id
         TP = sum([count_log[data_id]['pred']['TP'] for data_id in count_log])
@@ -1312,8 +1321,9 @@ class Evaluator:
             "DCheck": DCheck_item,
             "DCheck_adjust": DCheck_adjust_item,
         }
-        print(f"\nAll data_id: ")
-        print(tabulate(tabel_format, headers='firstrow', tablefmt='fancy_grid'))
+        if show_results:
+            print(f"\nAll data_id: ")
+            print(tabulate(tabel_format, headers='firstrow', tablefmt='fancy_grid'))
         return output_metrics
     
     def calculate_roc_pr_auc(self,data_id_list:list=[]):
@@ -1338,8 +1348,20 @@ class Evaluator:
             'DCheck': [],
             'DCheck_adjust': [],
         }
+        AUC_PR_map = {
+            'Pred': 0,
+            'Pred_adjust': 0,
+            'DCheck': 0,
+            'DCheck_adjust': 0,
+        }
+        AUC_ROC_map = {
+            'Pred': 0,
+            'Pred_adjust': 0,
+            'DCheck': 0,
+            'DCheck_adjust': 0,
+        }
         for conf in range(0,13):
-            res = self.calculate_f1_score(conf, data_id_list=data_id_list)
+            res = self.calculate_TP_FP_TN_FN(conf, data_id_list=data_id_list)
             for key in res:
                 item = res[key]
                 TPR, FPR = self.get_tpr_fpr(item['TP'], item['FP'], item['TN'], item['FN'])
@@ -1350,6 +1372,7 @@ class Evaluator:
         fig, ax = plt.subplots(figsize=(8, 5))
         for key in TPR_FPR_map:
             auc_score = auc([x[0] for x in TPR_FPR_map[key]], [x[1] for x in TPR_FPR_map[key]])
+            AUC_ROC_map[key] = auc_score
             ax.plot([x[0] for x in TPR_FPR_map[key]], [x[1] for x in TPR_FPR_map[key]], label=f'{key} (AUC={auc_score:.3f})', marker='x')
         ax.legend()
         ax.set_xlabel('FPR')
@@ -1370,6 +1393,7 @@ class Evaluator:
             precision_list = [x[1] for x in PR_map[key]]
             precision_list.append(1)
             auc_score = auc(recall_list, precision_list)
+            AUC_PR_map[key] = auc_score
             ax.plot(recall_list, precision_list, label=f'{key} (AUC={auc_score:.3f})', marker='x')
         ax.legend()
         ax.set_xlabel('Recall')
@@ -1382,37 +1406,73 @@ class Evaluator:
         ax.set_title(f"{self.dataset_name}-PR curve")
         fig.savefig(f"./{self.dataset_name}_PR_curve.png", bbox_inches='tight')
         plt.close()
+        return AUC_ROC_map, AUC_PR_map
+
 
     def calculate_adjust_PR_curve_auc(self, data_id_list:list=[]):
         if data_id_list == []:
             data_id_list = self.parsed_log.keys()
         # auc
-        PR_map = {
-            'Pred': [],
-            'Pred_adjust': [],
-            'DCheck': [],
-            'DCheck_adjust': [],
-        }
-        default_confidence_thres = 9
-        for thres_percentage in np.arange(0, 1.05, 0.05):
-            print(thres_percentage)
-            res = self.calculate_f1_score(default_confidence_thres, thres_percentage, data_id_list)
-            for key in res:
-                item = res[key]
-                acc, pre, rec, f1 = self.get_metrics(item['TP'], item['FP'], item['TN'], item['FN'])
-                PR_map[key].append((rec, pre))
-        # plot PR curve
-        fig, ax = plt.subplots(figsize=(6, 3))
-        for key in PR_map:
-            auc_score = auc([x[0] for x in PR_map[key]], [x[1] for x in PR_map[key]])
-            ax.plot([x[0] for x in PR_map[key]], [x[1] for x in PR_map[key]], label=f'{key} (AUC={auc_score:.3f})', marker='x')
-            # print(f"{key} >> {PR_map[key]}")
+        
+        # default_confidence_thres = 9
+        fig, ax = plt.subplots(figsize=(13, 7)) 
+        for thres_percentage in np.arange(0, 1.05, 0.2):
+            PR_map = {
+                # 'Pred': [],
+                'Pred_adjust': [],
+                # 'DCheck': [],
+                # 'DCheck_adjust': [],
+            }
+            for confidence in range(0, 13):
+                res = self.calculate_TP_FP_TN_FN(confidence, thres_percentage, data_id_list)
+                for key in PR_map:
+                    item = res[key]
+                    acc, pre, rec, f1 = self.get_metrics(item['TP'], item['FP'], item['TN'], item['FN'])
+                    PR_map[key].append((rec, pre))
+            # plot PR curve
+            for key in PR_map:
+                recall_list = [x[0] for x in PR_map[key]]
+                recall_list.append(0)
+                precision_list = [x[1] for x in PR_map[key]]
+                precision_list.append(1)
+                auc_score = auc(recall_list, precision_list)
+                ax.plot(recall_list, precision_list, label=f'{key} (thres={thres_percentage:.2f}, AUC={auc_score:.3f})', marker='x')
+                # print(f"{key} >> {PR_map[key]}")
         ax.legend()
         ax.set_xlabel('Recall')
         ax.set_ylabel('Precision')
+        ax.set_xlim(0, 1.01)
+        ax.set_ylim(0, 1.01)
+        ax.set_xticks(np.arange(0, 1.01, 0.1))
+        ax.set_yticks(np.arange(0, 1.01, 0.1))
+        ax.grid(True, linestyle='--', color='lightgray', linewidth=0.5)
         ax.set_title(f"{self.dataset_name}-PR curve (point-adjustment)")
         fig.savefig(f"./{self.dataset_name}_PR_curve_point_adjustment.png", bbox_inches='tight')
         plt.close()
+
+    def calculate_f1_aucpr_aucroc(self, confidence_thres, point_adjustment_thres, data_id_list:list=[]):
+        if data_id_list == []:
+            data_id_list = self.parsed_log.keys()
+        output_metrics = {}
+        res = self.calculate_TP_FP_TN_FN(confidence_thres, point_adjustment_thres, data_id_list)
+        auc_roc_map, auc_pr_map = self.calculate_roc_pr_auc(data_id_list)
+        for key in res:
+            item = res[key]
+            acc, pre, rec, f1 = self.get_metrics(item['TP'], item['FP'], item['TN'], item['FN'])
+            auc_roc = auc_roc_map[key]
+            auc_pr = auc_pr_map[key]
+            output_metrics[key] = {
+                'Acc': acc,
+                'Pre': pre,
+                'Rec': rec,
+                'F1': f1,
+                'AUC_ROC': auc_roc,
+                'AUC_PR': auc_pr,
+            }
+        return output_metrics
+        
+
+            
 
 if __name__ == '__main__':
     # check_shape('MSL')
