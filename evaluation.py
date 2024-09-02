@@ -30,7 +30,7 @@ config = {
     },
     "NASA-MSL": {
         'log_root': './log/log_nas/anormaly_detection/NASA-MSL-All-1',
-        'data_id_list': [],
+        'data_id_list': ['3', '9', '10', '11', '15', '23', '24'],
     },
     "NormA": {
         'log_root': './log/log_nas/anormaly_detection/NormA-1_4_7_13',
@@ -48,8 +48,8 @@ config = {
 #                          point_adjust_enable=point_adjust_enable, 
 #                          plot_enable=plot_enable,
 #                          channel_shared=channel_shared)
-
-evaluator = Evaluator(dataset_name, stride, processed_data_root, config[dataset_name]['log_root'])
-# evaluator.calculate_f1_score(confidence_thres=9, data_id_list=config[dataset_name]['data_id_list'])
-evaluator.calculate_roc_pr_auc(config[dataset_name]['data_id_list'])
+log_path =  config[dataset_name]['log_root'] #.replace('log_nas', 'Final-Results').replace('anormaly_detection/', '')
+evaluator = Evaluator(dataset_name, stride, processed_data_root, log_root=log_path)
+evaluator.calculate_TP_FP_TN_FN(confidence_thres=9, data_id_list=config[dataset_name]['data_id_list'],show_results=True)
+# evaluator.calculate_roc_pr_auc(config[dataset_name]['data_id_list'])
 # evaluator.calculate_adjust_PR_curve_auc(config[dataset_name]['data_id_list'])

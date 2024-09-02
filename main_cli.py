@@ -212,15 +212,18 @@ class ChatController:
                 self.used_tokens_in_minute += self.last_used_token  # update used token in this minute
                 # dump JSON response
                 parsed_response = json.loads(response)
+                if retry_times > pause_retry:
+                    print('Connection recovery...', file=sys.stderr)
                 # record time usage of a sample
                 sample_time_end = time.time()
                 self.sample_time_usage.append(sample_time_end - sample_time_start)
                 return parsed_response
             except Exception as e:
                 print(f'Error: {e}, try again. {retry_times}/{max_retry}')
+                time.sleep(5)
                 if retry_times == pause_retry:
                     print('There is something wrong, please check it and press any key to continue...', file=sys.stderr)
-                    input('There is something wrong, please check it and press any key to continue...')
+                    input('Press any key to continue...')
 
     def show_sample_time_usage_statistics(self):
         sample_time_usage = np.array(self.sample_time_usage)
@@ -245,10 +248,10 @@ This task contains two parts:
     - "Task1": I will give you some "normal reference" time series data slices without any abnormality. And you need to extract some valuable information from them to help me find the abnormality in the following time series data slices.
     - "Task2": I will give you some time series data slices with some abnormalities. You need to find the abnormality in them and provide some structured information.
 besides, I will offer you some background information about the data plots:
-    - The horizonal axis represents the time series index.
+    - The horizontal axis represents the time series index.
     - The vertical axis represents the value of the time series.
     - all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
-    - all normal reference is a slice of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
+    - all normal references are slices of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
 
 <Task>: 
 Now we are in the "Task1" part: I will give you some "normal reference" time series data slices without any abnormality. And you need to extract some valuable information from them to help me find the abnormality in the following time series data slices.
@@ -256,7 +259,7 @@ Now we are in the "Task1" part: I will give you some "normal reference" time ser
 <Target>: 
 Please help me extract some valuable information from them to help me find the abnormality in the following time series data slices.
 The output should include some structured information, please output in JSON format:
-    - normal_pattern (a 300-400 words paragraph): Try to describe the pattern of all "normal references" . All normal reference data slices are from the same data channel but in different strides. The abnormal pattern caused by truncation might be found at the begining and end of the sequence, do not pay too much attention to them. The description should cover at least the following aspects: period, stability, trend, peak, trough, and other important features.
+    - normal_pattern (a 300-400 words paragraph): Try to describe the pattern of all "normal references" . All normal reference data slices are from the same data channel but in different strides. The abnormal pattern caused by truncation might be found at the beginning and end of the sequence, do not pay too much attention to them. The description should cover at least the following aspects: period, stability, trend, peak, trough, and other important features.
 Last, please double check before you submit your answer.
 '''
 
@@ -266,11 +269,11 @@ I have a long time series data with some abnormalities. I have converted the dat
 This task contains two parts:
     - "Task1": I will give you some "normal reference" time series data slices without any abnormality. And you need to extrace some valuable information from them to help me find the abnormality in the following time series data slices.
     - "Task2": I will give you some time series data slices with some abnormalities. You need to find the abnormality in them and provide some structured information.
-besides, I will offer you some background information about the data plots:
-    - The horizonal axis represents the time series index.
+Besides, I will offer you some background information about the data plots:
+    - The horizontal axis represents the time series index.
     - The vertical axis represents the value of the time series.
     - all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
-    - all normal reference is a slice of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
+    - all normal references are slices of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
 
 <Task>: 
 In "Task1" part, you have already extracted some valuable information from the "normal reference" time series data slices. You can use them to help you find the abnormality in the following time series data slices.
@@ -279,8 +282,8 @@ Now we are in "Task2", you are expected to detect the abnormality in the given d
 <Target>: 
 Please help me find the abnormality in this time series data slice and provide some structured information.
 The output should include some structured information, please output in JSON format:
-    - abnormal_index (the output format should be like "[(start1, end1)/confidence_1/abnormal_type_1, (start2, end2)/confidence_2/abnormal_type_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1/abnormal_type_1, (index2)/confidence_2/abnormal_type_2, ...]",if there is no abnormality, you can say "[]". The final output should can be mixed with these three formats.): The abnormality index of the time series. There are some requirements:
-        + There may be multiple abnormalities in one stride, please try to find all of them. Pay attention to the range of each abnormality, the range should cover each whole abnormality in a suitable range.
+    - abnormal_index (the output format should be like "[(start1, end1)/confidence_1/abnormal_type_1, (start2, end2)/confidence_2/abnormal_type_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1/abnormal_type_1, (index2)/confidence_2/abnormal_type_2, ...]",if there is no abnormality, you can say "[]". The final output should be mixed with these three formats.): The abnormality index of the time series. There are some requirements:
+        + There may be multiple abnormalities in one stride. Please try to find all of them. Pay attention to the range of each abnormality, the range should cover each whole abnormality in a suitable range.
         + Since the x-axis in the image only provides a limited number of tick marks, in order to improve the accuracy of your prediction, please try to estimate the coordinates of any anomaly locations based on the tick marks shown in the image as best as possible.
         + all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
         + abnormal_type(answer from "none", "global", "contextual", "seasonal", "trend", "contextual"): The abnormality type of the time series, choose from [none, shapelet, seasonal, trend]. The detailed explanation is as follows:
@@ -290,7 +293,7 @@ The output should include some structured information, please output in JSON for
             + shapelet: Shapelet outliers refer to the subsequences with dissimilar basic shapelets compared with the normal shapelet
             + seasonal: Seasonal outliers are the subsequences with unusual seasonalities compared with the overall seasonality
             + trend: Trend outliers indicate the subsequences that significantly alter the trend of the time series, leading to a permanent shift on the mean of the data.
-        - confidence (integer, from 1 to 4): The confidence of your prediction. The value should be a integer between 1 and 4 which represents the confidence level of your prediction. Each level of confidence is explained as follows:
+        - confidence (integer, from 1 to 4): The confidence of your prediction. The value should be an integer between 1 and 4, which represents the confidence level of your prediction. Each level of confidence is explained as follows:
             + 1: No confidence: I am not sure about my prediction
             + 2: Low confidence: Weak evidence supports my prediction 
             + 3: medium confidence: strong evidence supports my prediction
@@ -325,22 +328,22 @@ double_check_prompt = '''
 <Background>: 
 I have a long time series data with some abnormalities. I have converted the data into plots and I need your help to find the abnormality in the time series data.
 There has been a response from another assistant, but I am not sure about the prediction. I need your help to double check the prediction.
-besides, I will offer you some background information about the data plots:
-    - The horizonal axis represents the time series index.
+Besides, I will offer you some background information about the data plots:
+    - The horizontal axis represents the time series index.
     - The vertical axis represents the value of the time series.
     - all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
-    - all normal reference is a slice of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
+    - all normal references are slices of the time series data with a fixed length and the same data channel. Therefore, the beginning and the end of the plot may be different, but the pattern should be similar.
 <Task>:
 Now, I will give you some "normal reference" and you are expected to double check the prediction of the abnormality in the given data.
 
 <Target>:
-The prediction of another assistant contains some information as flows:
+The prediction of another assistant contains some information as follows:
     - abnormal_index: The abnormality index of the time series. The output format should be like "[(start1, end1)/confidence_1/abnormal_type_1, (start2, end2)/confidence_2/abnormal_type_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1/abnormal_type_1, (index2)/confidence_2/abnormal_type_2, ...]",if there is no abnormality, you can say "[]".
     - abnormal_description: Make a brief description of the abnormality, why do you think it is abnormal?
 Based on the "nomral reference" I gave you, please read the prediction above and double check the prediction. If you find any mistakes, please correct them. The output should include some structured information, please output in JSON format:
-    - fixed_abnormal_index (string, the output format should be like "[(start1, end1)/confidence_1/abnormal_type_1, (start2, end2)/confidence_2/abnormal_type_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1/abnormal_type_1, (index2)/confidence_2/abnormal_type_2, ...]",if there is no abnormality, you can say "[]". The final output should can be mixed with these three formats.): The abnormality index of the time series. There are some requirements:
-        + 1. you should check each predoicion of the abnormal_type and make sure it is correct based on the abnormality index. If there is a incorrect prediction, you should rmove it.
-        + 2. you should check each prediction of the abnormal_index according to the image I gave to you. If there is a abnormal in image but not in the prediction, you should add it. The format should keep the same as the original prediction.
+    - fixed_abnormal_index (string, the output format should be like "[(start1, end1)/confidence_1/abnormal_type_1, (start2, end2)/confidence_2/abnormal_type_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1/abnormal_type_1, (index2)/confidence_2/abnormal_type_2, ...]",if there is no abnormality, you can say "[]". The final output should be mixed with these three formats.): The abnormality index of the time series. There are some requirements:
+        + 1. you should check each prediction of the abnormal_type and make sure it is correct based on the abnormality index. If there is a incorrect prediction, you should remove it.
+        + 2. you should check each prediction of the abnormal_index according to the image I gave to you. If there is an abnormality in image but not in the prediction, you should add it. The format should keep the same as the original prediction.
     - The reason why you think the prediction is correct or incorrect. (a 200-300 words paragraph): Make a brief description of your double check, why do you think the prediction is correct or incorrect?
 '''
 def make_double_check_prompt(parsed_respon:dict):
