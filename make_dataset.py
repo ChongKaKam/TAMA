@@ -193,5 +193,8 @@ if __name__ == '__main__':
     image_config = item['image_config']
     image_config['width'] = (2000/600 * window)
     
+    if args.modality == TextConvertor:
+        image_config = {}
+
     dataset = RawDataset(dataset_name, sample_rate=sample_rate, normalization_enable=normal_enable)
     dataset.convert_data(output_dir, mode, window, stride, modality_convertor, image_config, drop_last=drop_last, data_id_list=data_id_list)

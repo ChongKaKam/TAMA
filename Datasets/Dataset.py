@@ -157,7 +157,7 @@ class ImageConvertor(ConvertorBase):
         # convert to inches
         self.figsize = (self.width/self.dpi, self.height/self.dpi)
 
-    def image_config(self, width:int, height:int, dpi:int, x_ticks:int, aux_enable:bool):
+    def set_config(self, width:int, height:int, dpi:int, x_ticks:int, aux_enable:bool):
         self.width = width
         self.height = height
         self.dpi = dpi
@@ -217,8 +217,8 @@ class TextConvertor(ConvertorBase):
         }
         return res
     def format(self, data):
-        # TODO: how to format the time series data to text ????
-        raise NotImplementedError
+        formatted_data = np.array2string(data, separator=',', precision=3, suppress_small=True)
+        return formatted_data
 '''
 Utils
 '''
@@ -289,7 +289,7 @@ class RawDataset:
         self.ensure_dir(convertor_save_path)
         convertor = convertor_class(save_path=convertor_save_path)
         if image_config != {}:
-            convertor.image_config(**image_config)
+            convertor.set_config(**image_config)
 
         # 3. convert & save
         # data .npy format: [num_stride, window_size, data_channels]
@@ -563,6 +563,10 @@ class ProcessedDataset:
     def get_image(self, data_id, num_stride, ch):
         image_path = os.path.join(self.dataset_path, data_id, self.mode, 'image', f'{num_stride}-{ch}.png')
         return image_path
+    
+    def get_text(self, data_id, num_stride, ch):
+        text_path = os.path.join(self.dataset_path, data_id, self.mode, 'text', f'{num_stride}-{ch}.txt')
+        return text_path
 
     def get_label(self, data_id, num_stride, ch):
         label_channels = self.data_id_info[data_id]['label_channels']

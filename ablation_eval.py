@@ -38,7 +38,7 @@ nr_3_map = {
     },
     'NASA-SMAP': {
         'Pred': {'Pre': 0.602, 'Rec': 0.388, 'F1': 0.472, 'AUC_PR': 0.475, 'AUC_ROC': 0.781},
-        'Pred_adjust': {'Pre': 0.793, 'Rec': 983, 'F1': 0.878, 'AUC_PR': 0.892, 'AUC_ROC': 0.970},
+        'Pred_adjust': {'Pre': 0.793, 'Rec': 0.983, 'F1': 0.878, 'AUC_PR': 0.892, 'AUC_ROC': 0.970},
         'DCheck': {'Pre': 0.8, 'Rec': 0.395, 'F1': 0.529, 'AUC_PR': 0.586, 'AUC_ROC': 0.828},
         'DCheck_adjust': {'Pre': 0.909, 'Rec': 0.983, 'F1': 0.945, 'AUC_PR': 0.955, 'AUC_ROC': 0.984},
     },
@@ -79,7 +79,7 @@ def eval_normal_reference(plot_enable=False):
                     metrics = nr_3_map[dataset_name]
                 else:
                     evaluator = Evaluator(dataset_name, stride, processed_data_root, log_root=log_path)
-                    metrics = metrics = evaluator.calculate_f1_aucpr_aucroc(default_confidence, default_PAT)
+                    metrics = metrics = evaluator.calculate_f1_aucpr_aucroc(default_confidence, default_PAT, data_id_list=[2, 24, 27, 37, 45])
                 # print(metrics.keys())
                 name = f"{key}-{nr}"
                 pre = metrics[key]['Pre']
@@ -110,8 +110,8 @@ def eval_normal_reference(plot_enable=False):
                 plt.close(fig)
                 
 def eval_window_size(plot_enable=False):
-    period_list = [1,2,3,4]
-    dataset_list = ['UCR']
+    period_list = [2,4,6]
+    dataset_list = ['NASA-SMAP']
     eval_log_root = f"/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/Ablation/window_size"
     processed_data_root = "/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/Ablation"
     default_confidence = 9
@@ -124,7 +124,7 @@ def eval_window_size(plot_enable=False):
             'DCheck_adjust': {'Pre': [], 'Rec': [], 'F1': [], 'AUC_PR': [], 'AUC_ROC': []},
         }
         for period in period_list:
-            if period == 3:
+            if period == 6:
                 metrics = nr_3_map[dataset_name]
             else:
                 name = f"{dataset_name}-{period}T"
@@ -148,10 +148,10 @@ def eval_window_size(plot_enable=False):
         for key in metrics_map.keys():
             tabel = [
                 ['Name', 'P', 'R', 'F1', 'AUCPR', 'AUCROC'],
-                [f"{key}-1T", f"{metrics_map[key]['Pre'][0]:.3f}", f"{metrics_map[key]['Rec'][0]:.3f}", f"{metrics_map[key]['F1'][0]:.3f}", f"{metrics_map[key]['AUC_PR'][0]:.3f}", f"{metrics_map[key]['AUC_ROC'][0]:.3f}"],
-                [f"{key}-2T", f"{metrics_map[key]['Pre'][1]:.3f}", f"{metrics_map[key]['Rec'][1]:.3f}", f"{metrics_map[key]['F1'][1]:.3f}", f"{metrics_map[key]['AUC_PR'][1]:.3f}", f"{metrics_map[key]['AUC_ROC'][1]:.3f}"],
-                [f"{key}-3T", f"{metrics_map[key]['Pre'][2]:.3f}", f"{metrics_map[key]['Rec'][2]:.3f}", f"{metrics_map[key]['F1'][2]:.3f}", f"{metrics_map[key]['AUC_PR'][2]:.3f}", f"{metrics_map[key]['AUC_ROC'][2]:.3f}"],
-                [f"{key}-4T", f"{metrics_map[key]['Pre'][3]:.3f}", f"{metrics_map[key]['Rec'][3]:.3f}", f"{metrics_map[key]['F1'][3]:.3f}", f"{metrics_map[key]['AUC_PR'][3]:.3f}", f"{metrics_map[key]['AUC_ROC'][3]:.3f}"],
+                [f"{key}-2T", f"{metrics_map[key]['Pre'][0]:.3f}", f"{metrics_map[key]['Rec'][0]:.3f}", f"{metrics_map[key]['F1'][0]:.3f}", f"{metrics_map[key]['AUC_PR'][0]:.3f}", f"{metrics_map[key]['AUC_ROC'][0]:.3f}"],
+                [f"{key}-4T", f"{metrics_map[key]['Pre'][1]:.3f}", f"{metrics_map[key]['Rec'][1]:.3f}", f"{metrics_map[key]['F1'][1]:.3f}", f"{metrics_map[key]['AUC_PR'][1]:.3f}", f"{metrics_map[key]['AUC_ROC'][1]:.3f}"],
+                [f"{key}-6T", f"{metrics_map[key]['Pre'][2]:.3f}", f"{metrics_map[key]['Rec'][2]:.3f}", f"{metrics_map[key]['F1'][2]:.3f}", f"{metrics_map[key]['AUC_PR'][2]:.3f}", f"{metrics_map[key]['AUC_ROC'][2]:.3f}"],
+                # [f"{key}-8T", f"{metrics_map[key]['Pre'][3]:.3f}", f"{metrics_map[key]['Rec'][3]:.3f}", f"{metrics_map[key]['F1'][3]:.3f}", f"{metrics_map[key]['AUC_PR'][3]:.3f}", f"{metrics_map[key]['AUC_ROC'][3]:.3f}"],
             ]
             print(f"\nDataset: {dataset_name}, Method: {key}")
             print(tabulate.tabulate(tabel, headers='firstrow', tablefmt='fancy_grid'))
@@ -161,7 +161,7 @@ def eval_window_size(plot_enable=False):
                 ax.plot(period_list, metrics_map[key]['AUC_PR'], label='AUC-PR', marker='o')
                 ax.plot(period_list, metrics_map[key]['AUC_ROC'], label='AUC-ROC', marker='s')
                 ax.set_xticks(period_list)
-                ax.set_xlim([1, 4])
+                ax.set_xlim([2, 6.1])
                 ax.set_ylim([0, 1])
                 ax.set_xlabel('window size (period)')
                 ax.set_ylabel('Score')
