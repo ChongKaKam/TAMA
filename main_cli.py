@@ -13,10 +13,27 @@ import re
 import matplotlib.pyplot as plt
 import sys
 
-from BigModel.Base import BigModelBase
-from BigModel.Azure import Chat_AzureGPT4o
 from Datasets.Dataset import ProcessedDataset
 
+from BigModel.Base import BigModelBase
+from BigModel.Azure import Chat_AzureGPT4o, Chat_AzureGPT4o_mini
+from BigModel.GLM import Chat_GLM4v
+from BigModel.Claude import Chat_Claude
+from BigModel.Groq import Chat_LLaVA_v1_5
+from BigModel.QWen import Chat_Qwen_VL_MAX, Chat_Qwen_VL_PLUS
+from BigModel.Gemini import Chat_Gemini_1_5_pro, Chat_Gemini_1_5_flash
+
+ChatBotMAP = {
+    'GPT-4o': Chat_AzureGPT4o,
+    'GPT-4o-mini': Chat_AzureGPT4o_mini,
+    'GLM-4v-plus': Chat_GLM4v,
+    'Claude': Chat_Claude,
+    'LLaVA': Chat_LLaVA_v1_5,
+    'qwen-vl-max': Chat_Qwen_VL_MAX,
+    'qwen-vl-plus':Chat_Qwen_VL_PLUS,
+    'gemini-1.5-pro': Chat_Gemini_1_5_pro,
+    'gemini-1.5-flash': Chat_Gemini_1_5_flash,
+}
 '''
 Args Parser
 '''
@@ -29,6 +46,8 @@ def args_parse():
     parser.add_argument('--normal_reference', type=int, default=3, required=False)
     parser.add_argument('--ratio', type=float, default=1.0, required=False)
     parser.add_argument('--data_id_list', type=str, default='', help='Data id list')
+    parser.add_argument('--LLM', type=str, default='GPT-4o', help='[GPT-4o, GPT-4o-mini, GLM-4v-plus]')
+    parser.add_argument('--subtask', type=str, default='', help='Subtask name', required=False)
     args = parser.parse_args()
     # dump data_id_list_str
     data_id_list_str = args.data_id_list
@@ -40,40 +59,32 @@ def args_parse():
 Message Helper
 '''
 class MessageHelper:
-    def __init__(self):
+    def __init__(self, chatbot:BigModelBase):
         self.message_list = []
-    @staticmethod
-    def image_base64_encode(image_path):
-        with Image.open(image_path) as img:
-            buffer = io.BytesIO()
-            img.save(buffer, format="PNG")
-            return base64.b64encode(buffer.getvalue()).decode('utf-8')
+        self.chatbot = chatbot
+    
     def set_system_message(self, message):
         self.sys_message = {'role': 'system', 'content': message}
         self.message_list.append(self.sys_message)
+
     def add_message(self, role:str, text:str, image_path_list:list=[]):
         new_message = {
             'role': role,
-            'content': [{"type": "text", "text": text}],
+            'content': [self.chatbot.text_item(text)],
         }
         for image_path in image_path_list:
-            image_base64 = self.image_base64_encode(image_path)
-            new_message['content'].append({
-                "type": "image_url", 
-                "image_url": {"url": f"data:image/png;base64,{image_base64}", "detail": "high"},
-            })
+            new_message['content'].append(self.chatbot.image_item_from_path(image_path))
         self.message_list.append(new_message)
+
     def add_message_with_base64(self, role:str, text:str, image_base64_list:list=[]):
         new_message = {
             'role': role,
-            'content': [{"type": "text", "text": text}],
+            'content': [self.chatbot.text_item(text)],
         }
         for image_base64 in image_base64_list:
-            new_message['content'].append({
-                "type": "image_url", 
-                "image_url": {"url": f"data:image/png;base64,{image_base64}", "detail": "high"},
-            })
+            new_message['content'].append(self.chatbot.image_item_from_base64(image_base64))
         self.message_list.append(new_message)
+
     def add_user_message(self, text:str, image_path_list:list=[]):
         self.add_message('user', text, image_path_list)
     def add_chatbot_answer(self, text:str, image_path_list:list=[]):
@@ -82,11 +93,12 @@ class MessageHelper:
         return self.message_list
     def clean_message(self):
         self.message_list = []
-        self.message_list.append(self.sys_message)
+        # self.message_list.append(self.sys_message)
     def copy_message(self):
-        new_helper = MessageHelper()
+        new_helper = MessageHelper(self.chatbot)
         new_helper.message_list = self.message_list.copy()
         return new_helper
+    
 '''
 Normal Reference Helper
 '''
@@ -110,14 +122,15 @@ class NormalReferenceHelper:
         else:
             normal_list = self.structure_info[data_id]['normal']
             if len(normal_list) == 0:
-                raise Exception(f'No normal reference found in {self.structure_yaml_path} for data_id {data_id}.')
+                # raise Exception(f'No normal reference found in {self.structure_yaml_path} for data_id {data_id}.')
+                return []
             if num > len(normal_list):
                 num = len(normal_list)
             sample_normal_list = normal_list[:num] if fixed else random.sample(normal_list, num)
             print(f'Normal reference list: {sample_normal_list}')
             for idx in range(num):
                 parsed_id = sample_normal_list[idx].split('-')
-                image_path = os.path.join(self.normal_reference_base, data_id, 'test', 'image', f'{parsed_id[1]}-{parsed_id[2]}.png')
+                image_path = os.path.join(self.normal_reference_base, data_id, 'test', 'image', f'{parsed_id[-2]}-{parsed_id[-1]}.png')
                 sample_normal_list[idx] = image_path
             return sample_normal_list
 '''
@@ -150,6 +163,24 @@ class Logger:
     def save(self):
         with open(self.save_path, 'w') as f:
             yaml.dump(self.log_info, f)
+'''
+WheelChair of JSON mode
+'''
+JSON_whitelist = ['GPT-4o', 'GPT-4o-mini']
+class JSON_WheelChair:
+    def __init__(self):
+        self.chatbot = Chat_AzureGPT4o(4096, 0.1, 0.3)
+        self.message_helper = MessageHelper(self.chatbot)
+        self.prompt = 'You are a helpful JSON formater. \nI will give you a text and you need to format it into JSON format without any change. \nThe key is defined in below:(If there is no content of a key, you can output "")\n'
+    def add_key(self, key:str, description:str):
+        self.prompt += f'    - "{key}": {description}\n'
+    def get_json(self, text:str):
+        prompt = self.prompt + 'The text:\n' + text
+        self.message_helper.add_user_message(prompt)
+        response = self.chatbot.chat_retry(self.message_helper.get_message())
+        print(response)
+        return response
+    
 '''
 Chat Controller
 Features:
@@ -198,10 +229,11 @@ class ChatController:
             print(f'slepp for {sleep_time} s...')
             time.sleep(sleep_time)
             self.start_timming()
-    def chat_with_rate_control(self, message:list, max_retry:int=6)->dict:
+    def chat_with_rate_control(self, message:list, max_retry:int=6, JSON_wheelchair=None)->dict:
         # chat with retry
         pause_retry = max_retry // 2
-        for retry_times in range(max_retry):
+        retry_times = 0
+        while retry_times <= max_retry:
             try:
                 sample_time_start = time.time()
                 self.last_used_token = 0
@@ -210,6 +242,8 @@ class ChatController:
                 self.token_usage = self.chatbot.get_used_token()    # update total token usage
                 self.last_used_token = self.chatbot.get_last_used_token()['total_tokens']
                 self.used_tokens_in_minute += self.last_used_token  # update used token in this minute
+                if JSON_wheelchair is not None:
+                    response = JSON_wheelchair.get_json(response)
                 # dump JSON response
                 parsed_response = json.loads(response)
                 if retry_times > pause_retry:
@@ -217,13 +251,17 @@ class ChatController:
                 # record time usage of a sample
                 sample_time_end = time.time()
                 self.sample_time_usage.append(sample_time_end - sample_time_start)
+                retry_times += 1
                 return parsed_response
             except Exception as e:
                 print(f'Error: {e}, try again. {retry_times}/{max_retry}')
+                retry_times += 1
                 time.sleep(5)
                 if retry_times == pause_retry:
                     print('There is something wrong, please check it and press any key to continue...', file=sys.stderr)
-                    input('Press any key to continue...')
+                    cmd = input('type [retry] to retry, [ok] to continue:')
+                    if cmd == 'retry':
+                        retry_times = 0
 
     def show_sample_time_usage_statistics(self):
         sample_time_usage = np.array(self.sample_time_usage)
@@ -240,7 +278,10 @@ class ChatController:
 
 '''
 Prompts
+    - The horizontal axis represents the time series index.
+    - The vertical axis represents the value of the time series.
 '''
+
 normal_reference_prompt = '''
 <Background>: 
 I have a long time series data with some abnormalities. I have converted the data into plots and I need your help to find the abnormality in the time series data.
@@ -248,8 +289,8 @@ This task contains two parts:
     - "Task1": I will give you some "normal reference" time series data slices without any abnormality. And you need to extract some valuable information from them to help me find the abnormality in the following time series data slices.
     - "Task2": I will give you some time series data slices with some abnormalities. You need to find the abnormality in them and provide some structured information.
 besides, I will offer you some background information about the data plots:
-    - The horizontal axis represents the time series index.
-    - The vertical axis represents the value of the time series.
+    - The vertical axis represents the time series index.
+    - The horizontal axis represents the value of the time series.
     - all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
     - all normal references are slices of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
 
@@ -262,7 +303,8 @@ The output should include some structured information, please output in JSON for
     - normal_pattern (a 300-400 words paragraph): Try to describe the pattern of all "normal references" . All normal reference data slices are from the same data channel but in different strides. The abnormal pattern caused by truncation might be found at the beginning and end of the sequence, do not pay too much attention to them. The description should cover at least the following aspects: period, stability, trend, peak, trough, and other important features.
 Last, please double check before you submit your answer.
 '''
-
+# - The horizontal axis represents the time series index.
+# - The vertical axis represents the value of the time series.
 anormaly_detection_prompt = '''
 <Background>: 
 I have a long time series data with some abnormalities. I have converted the data into plots and I need your help to find the abnormality in the time series data.
@@ -270,8 +312,8 @@ This task contains two parts:
     - "Task1": I will give you some "normal reference" time series data slices without any abnormality. And you need to extrace some valuable information from them to help me find the abnormality in the following time series data slices.
     - "Task2": I will give you some time series data slices with some abnormalities. You need to find the abnormality in them and provide some structured information.
 Besides, I will offer you some background information about the data plots:
-    - The horizontal axis represents the time series index.
-    - The vertical axis represents the value of the time series.
+    - The vertical axis represents the time series index.
+    - The horizontal axis represents the value of the time series.
     - all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
     - all normal references are slices of the time series data with a fixed length and the same data channel. Therefore the beginning and the end of the plot may be different but the pattern should be similar.
 
@@ -282,17 +324,16 @@ Now we are in "Task2", you are expected to detect the abnormality in the given d
 <Target>: 
 Please help me find the abnormality in this time series data slice and provide some structured information.
 The output should include some structured information, please output in JSON format:
-    - abnormal_index (the output format should be like "[(start1, end1)/confidence_1/abnormal_type_1, (start2, end2)/confidence_2/abnormal_type_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1/abnormal_type_1, (index2)/confidence_2/abnormal_type_2, ...]",if there is no abnormality, you can say "[]". The final output should be mixed with these three formats.): The abnormality index of the time series. There are some requirements:
+    - abnormal_index (the output format should be like "[(start1, end1)/confidence_1/abnormal_type_1, (start2, end2)/confidence_2/abnormal_type_2, ...]", if there is no abnormality, you can say "[]". The final output should be mixed with these three formats.): The abnormality index of the time series. There are some requirements:
         + There may be multiple abnormalities in one stride. Please try to find all of them. Pay attention to the range of each abnormality, the range should cover each whole abnormality in a suitable range.
         + Since the x-axis in the image only provides a limited number of tick marks, in order to improve the accuracy of your prediction, please try to estimate the coordinates of any anomaly locations based on the tick marks shown in the image as best as possible.
         + all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
-        + abnormal_type(answer from "none", "global", "contextual", "seasonal", "trend", "contextual"): The abnormality type of the time series, choose from [none, shapelet, seasonal, trend]. The detailed explanation is as follows:
-            + none: No abnormality
-            + global: Global outliers refer to the points that significantly deviate from the rest of the points. 
-            + contextual: Contextual outliers are the points that deviate from its corresponding context, which is defined as the neighboring time points within certain ranges.
-            + shapelet: Shapelet outliers refer to the subsequences with dissimilar basic shapelets compared with the normal shapelet
-            + seasonal: Seasonal outliers are the subsequences with unusual seasonalities compared with the overall seasonality
-            + trend: Trend outliers indicate the subsequences that significantly alter the trend of the time series, leading to a permanent shift on the mean of the data.
+        + abnormal_type(answer from "global", "contextual", "frequency", "trend", "contextual" "shapelet"): The abnormality type of the time series, choose from [global, contextual, frequency, trend, shapelet]. The detailed explanation is as follows:
+            + global: Global outliers refer to the points that significantly deviate from the rest of the points. Try to position the outliers at the center of the interval.
+            + contextual: Contextual outliers are the points that deviate from its corresponding context, which is defined as the neighboring time points within certain ranges. Try to position the outliers at the center of the interval.
+            + frequency: Frequency outliers refer to changes in frequency, the basic shape of series remains the same. Please focuse on the horizontal axis to find the frequency anomalies.
+            + trend: Trend outliers indicate the subsequences that significantly alter the trend of the time series, leading to a permanent shift on the mean of the data. Mark the intervals where the mean of the data significantly changes.
+            + shapelet: Shapelet outliers refer to the subsequences with totally different shapes compared to the rest of the time series.
         - confidence (integer, from 1 to 4): The confidence of your prediction. The value should be an integer between 1 and 4, which represents the confidence level of your prediction. Each level of confidence is explained as follows:
             + 1: No confidence: I am not sure about my prediction
             + 2: Low confidence: Weak evidence supports my prediction 
@@ -324,13 +365,15 @@ def make_anormaly_detection_response_text(parsed_respon:dict):
     return assistant_response_text
 
 # double check
+# - The vertical axis represents the time series index.
+# - The horizontal axis represents the value of the time series.
 double_check_prompt = '''
 <Background>: 
 I have a long time series data with some abnormalities. I have converted the data into plots and I need your help to find the abnormality in the time series data.
 There has been a response from another assistant, but I am not sure about the prediction. I need your help to double check the prediction.
 Besides, I will offer you some background information about the data plots:
-    - The horizontal axis represents the time series index.
-    - The vertical axis represents the value of the time series.
+    - The vertical axis represents the time series index.
+    - The horizontal axis represents the value of the time series.
     - all normal reference data slices are from the same data channel but in different strides. Therefore, some patterns based on the position, for example, the position of peaks and the end of the plot, may cause some confusion.
     - all normal references are slices of the time series data with a fixed length and the same data channel. Therefore, the beginning and the end of the plot may be different, but the pattern should be similar.
 <Task>:
@@ -341,7 +384,7 @@ The prediction of another assistant contains some information as follows:
     - abnormal_index: The abnormality index of the time series. The output format should be like "[(start1, end1)/confidence_1/abnormal_type_1, (start2, end2)/confidence_2/abnormal_type_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1/abnormal_type_1, (index2)/confidence_2/abnormal_type_2, ...]",if there is no abnormality, you can say "[]".
     - abnormal_description: Make a brief description of the abnormality, why do you think it is abnormal?
 Based on the "nomral reference" I gave you, please read the prediction above and double check the prediction. If you find any mistakes, please correct them. The output should include some structured information, please output in JSON format:
-    - fixed_abnormal_index (string, the output format should be like "[(start1, end1)/confidence_1/abnormal_type_1, (start2, end2)/confidence_2/abnormal_type_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1/abnormal_type_1, (index2)/confidence_2/abnormal_type_2, ...]",if there is no abnormality, you can say "[]". The final output should be mixed with these three formats.): The abnormality index of the time series. There are some requirements:
+    - corrected_abnormal_index (string, the output format should be like "[(start1, end1)/confidence_1/abnormal_type_1, (start2, end2)/confidence_2/abnormal_type_2, ...]", if there are some single outliers, the output should be "[(index1)/confidence_1/abnormal_type_1, (index2)/confidence_2/abnormal_type_2, ...]",if there is no abnormality, you can say "[]". The final output should be mixed with these three formats.): The abnormality index of the time series. There are some requirements:
         + 1. you should check each prediction of the abnormal_type and make sure it is correct based on the abnormality index. If there is a incorrect prediction, you should remove it.
         + 2. you should check each prediction of the abnormal_index according to the image I gave to you. If there is an abnormality in image but not in the prediction, you should add it. The format should keep the same as the original prediction.
     - The reason why you think the prediction is correct or incorrect. (a 200-300 words paragraph): Make a brief description of your double check, why do you think the prediction is correct or incorrect?
@@ -362,15 +405,18 @@ if __name__ == '__main__':
     refined = args.refined
     balanced = args.balanced
     ratio = args.ratio
+    LLM_name = args.LLM
+    subtask_name = args.subtask
     NormalReferenceNum = args.normal_reference
     doubel_check_enable = args.double_check
     data_id_list = args.data_id_list
     print(f'dataset_name: {dataset_name}, refined: {refined}, balanced: {balanced}, ratio: {ratio}')
     print(f'NormalReferenceNum: {NormalReferenceNum}, doubel_check_enable: {doubel_check_enable}')
+    print(f'Subtask: {subtask_name}, Using LLM: {LLM_name}')
     # exit()
     # load dataset & normal reference helper
-    log_save_path = os.path.join('/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log', f'{dataset_name}_log.yaml')
-    processed_data_path = '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output'
+    log_save_path = os.path.join('/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log', subtask_name, f'{dataset_name}_{LLM_name}_log.yaml')
+    processed_data_path = os.path.join('/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output', subtask_name)
     normal_reference_base = os.path.join(processed_data_path, dataset_name)
     structure_yaml_path = os.path.join(normal_reference_base, 'test_structure.yaml')
     dataset = ProcessedDataset(os.path.join(processed_data_path, dataset_name), mode='test')
@@ -379,13 +425,21 @@ if __name__ == '__main__':
     max_tokens=4096
     temperature=0.1
     top_p=0.3
-    chatbot = Chat_AzureGPT4o(max_tokens, temperature, top_p)
+    # chatbot = Chat_AzureGPT4o(max_tokens, temperature, top_p)
+    # chatbot = Chat_GLM4v(max_tokens, temperature, top_p)
+    chatbot = ChatBotMAP[LLM_name](max_tokens, temperature, top_p)
+    rotation_angle = 0
+    chatbot.set_image_rotation(rotation_angle)
+    # if 'GPT-4o' not in LLM_name:
+    #     js_wheelchair = JSON_WheelChair()
+    # else:
+    #     js_wheelchair = None
     chat_controller = ChatController(chatbot)
     # init logger
     logger = Logger(log_save_path)
     # init message helper
-    detect_messager = MessageHelper()
-    detect_messager.set_system_message('you are a helpful assistant to detect the abnormality in the time series data. Please output in JSON format.')
+    detect_messager = MessageHelper(chatbot)
+    # detect_messager.set_system_message('you are a helpful assistant to detect the abnormality in the time series data. Please output in JSON format.')
     # preparation
     if data_id_list == [] or data_id_list == ['']:
         data_id_list = dataset.get_id_list()
@@ -414,12 +468,20 @@ if __name__ == '__main__':
         label_channel = data_info['label_channels']
         detect_messager.clean_message()
         for ch in range(data_channel):
+            normal_reference_image_list = []
             if NormalReferenceNum > 0:
                 normal_reference_image_list = normal_reference_helper.find_normal_reference(data_id, ch, NormalReferenceNum)
+                if normal_reference_image_list == []:
+                    continue
                 detect_messager.add_user_message(normal_reference_prompt, normal_reference_image_list)
-                # print(normal_reference_image_list)
+                print(normal_reference_image_list)
                 # continue
-                normal_reference_response = chat_controller.chat_with_rate_control(detect_messager.get_message())
+                if LLM_name not in JSON_whitelist:
+                    normal_reference_chair = JSON_WheelChair()
+                    normal_reference_chair.add_key('normal_pattern', '')
+                else:
+                    normal_reference_chair = None
+                normal_reference_response = chat_controller.chat_with_rate_control(detect_messager.get_message(), JSON_wheelchair=normal_reference_chair)
                 print(f'data_id: {data_id}, channel: {ch}, normal_reference_token_usage: {chat_controller.get_last_used_token()} >> Time: {chat_controller.get_last_sample_time_usage():.2f}s')
                 normal_pattern = str(normal_reference_response['normal_pattern'])
                 normal_reference_response_prompt = make_normal_reference_response_text(normal_pattern)
@@ -433,10 +495,17 @@ if __name__ == '__main__':
                         continue
                 image_path = dataset.get_image(data_id, stride_idx, ch)
                 image_label = dataset.get_label(data_id, stride_idx, ch)
-                label_index = np.where(image_label == 1)[0].tolist()
+                label_index = np.where(image_label >= 1)[0].tolist()
                 # chat
                 stride_msg_helper.add_user_message(anormaly_detection_prompt, [image_path])
-                stride_response = chat_controller.chat_with_rate_control(stride_msg_helper.get_message())
+                if LLM_name not in JSON_whitelist:
+                    stride_chair = JSON_WheelChair()
+                    stride_chair.add_key('abnormal_index', 'the format is like "[(start1, end1)/confidence_1/abnormal_type_1, (start2, end2)/confidence_2/abnormal_type_2, ...]", the abnormal type is one of [global, contextual, frequency, trend, shapelet]')
+                    stride_chair.add_key('abnormal_description', 'a 200-300 words paragraph')
+                    stride_chair.add_key('abnormal_type_description', 'a 200-300 words paragraph')
+                else:
+                    stride_chair = None
+                stride_response = chat_controller.chat_with_rate_control(stride_msg_helper.get_message(), JSON_wheelchair=stride_chair)
                 print(f'[{sample_cnt}/{total_sample_num}]>> data_id: {data_id}, stride: {stride_idx}, channel: {ch}, stride_token_usage: {chat_controller.get_last_used_token()} >> Time: {chat_controller.get_last_sample_time_usage():.2f}s')
                 # double check
                 response_abnormal_index = stride_response.get('abnormal_index', '[]')
@@ -492,6 +561,10 @@ if __name__ == '__main__':
                         fig.tight_layout(pad=0.1)
                         buffer = io.BytesIO()
                         fig.savefig(buffer, format='png', bbox_inches='tight')
+                        buffer.seek(0)
+                        image = Image.open(buffer)
+                        buffer = io.BytesIO()
+                        image = image.rotate(rotation_angle, expand=True).save(buffer, format="PNG")
                         # fig.savefig('./test.png', bbox_inches='tight')
                         image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
                         base64_list.append(image_base64)
@@ -500,7 +573,13 @@ if __name__ == '__main__':
                     double_check_msg_helper.add_chatbot_answer(make_anormaly_detection_response_text(stride_response))
                     double_check_prompt = make_double_check_prompt(stride_response)
                     double_check_msg_helper.add_message_with_base64('user', double_check_prompt, base64_list)
-                    double_check_response = chat_controller.chat_with_rate_control(double_check_msg_helper.get_message())
+                    if LLM_name not in JSON_whitelist:
+                        double_check_chair = JSON_WheelChair()
+                        double_check_chair.add_key('corrected_abnormal_index', 'the format is like "[(start1, end1)/confidence_1/abnormal_type_1, (start2, end2)/confidence_2/abnormal_type_2, ...]"')
+                        double_check_chair.add_key('reason', 'a 200-300 words paragraph')
+                    else:
+                        double_check_chair = None
+                    double_check_response = chat_controller.chat_with_rate_control(double_check_msg_helper.get_message(), JSON_wheelchair=double_check_chair)
                     print(f'Double check >> check_idx: {check_idx}, double_check_token_usage: {chat_controller.get_last_used_token()} >> Time: {chat_controller.get_last_sample_time_usage():.2f}s')
                 # log
                 log_item = {
@@ -508,6 +587,7 @@ if __name__ == '__main__':
                     'num_stride': stride_idx,
                     'data_channel': ch,
                     'image': image_path,
+                    'normal_reference_num': len(normal_reference_image_list),
                     'labels': str(label_index),
                     'abnormal_index': stride_response['abnormal_index'] if 'abnormal_index' in stride_response else '[]',
                     'abnormal_type_description': stride_response['abnormal_type_description'] if 'abnormal_type_description' in stride_response else '',
@@ -527,7 +607,7 @@ if __name__ == '__main__':
                     if double_check_response is not None:
                         log_item['double_check'] = {
                             # 'is_correct': double_check_response['is_correct'] if 'is_correct' in double_check_response else 'False',
-                            'fixed_abnormal_index': double_check_response['fixed_abnormal_index'] if 'fixed_abnormal_index' in double_check_response else '[]',
+                            'corrected_abnormal_index': double_check_response['corrected_abnormal_index'] if 'corrected_abnormal_index' in double_check_response else '[]',
                             'reason': double_check_response['reason'] if 'reason' in double_check_response else '',
                         }
                 logger.log(data_id, stride_idx, ch, log_item)

@@ -7,9 +7,13 @@ MakeDataset.py
 output
 data
 log
+LMM_test
 SOTA
 main-old.py
 dataset.yaml
+table.py
+main_cli_text-old.py
+main_cli-old.py
 *.sh
 # Byte-compiled / optimized / DLL files
 __pycache__/
