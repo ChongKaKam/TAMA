@@ -1,0 +1,12 @@
+openai
+azure-ai-inference
+azure-identity
+zhipuai
+groq
+sensenova
+numpy 
+pandas
+tqdm
+tabulate
+scikit-learn
+matplotlib
