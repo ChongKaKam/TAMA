@@ -18,14 +18,19 @@ class BigModelBase:
         self.used_token = {}
         self.last_used_token = {}
         self.tokens_per_minute = math.inf
+        self.image_rotation_angle = 0
 
     def load_my_api(self, name):
         self.api_key = yaml.safe_load(open(DEFAULT_API_PATH))[name]['api_key']
 
+    def set_image_rotation(self, angle:float=0):
+        self.image_rotation_angle = angle
+
     def image_encoder_base64(self, image_path):
+        # print(image_path)
         with Image.open(image_path) as img:
             buffer = io.BytesIO()
-            img.save(buffer, format="PNG")
+            img.rotate(self.image_rotation_angle, expand=True).save(buffer, format="PNG")
             return base64.b64encode(buffer.getvalue()).decode('utf-8')
 
     def chat(self, message):
@@ -50,3 +55,12 @@ class BigModelBase:
     
     def get_tokens_per_minute(self):
         return self.tokens_per_minute
+    
+    def text_item(self, content):
+        pass
+
+    def image_item_from_path(self, image_path):
+        pass
+
+    def image_item_from_base64(self, image_base64):
+        pass

@@ -38,6 +38,34 @@ class Chat_GPT4o(BigModelBase):
         self.used_token['total_tokens'] += response.usage.total_tokens
         return ans
     
+    def text_item(self, content):
+        item = {
+            "type": "text",
+            "text": content
+        }
+        return item
+
+    def image_item_from_path(self, image_path, detail="high"):
+        image_base64 = self.image_encoder_base64(image_path)
+        item = {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/png;base64,{image_base64}", 
+                "detail": detail,
+            },
+        }
+        return item
+    
+    def image_item_from_base64(self, image_base64, detail="high"):
+        item = {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/png;base64,{image_base64}", 
+                "detail": detail,
+            },
+        }
+        return item
+    
 '''
 GPT-4o with structured output
 '''
@@ -72,3 +100,31 @@ class Chat_GPT4o_Structured(BigModelBase):
         self.used_token['prompt_tokens'] += response.usage.prompt_tokens
         self.used_token['total_tokens'] += response.usage.total_tokens
         return ans
+    
+    def text_item(self, content):
+        item = {
+            "type": "text",
+            "text": content
+        }
+        return item
+
+    def image_item_from_path(self, image_path, detail="high"):
+        image_base64 = self.image_encoder_base64(image_path)
+        item = {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/png;base64,{image_base64}", 
+                "detail": detail,
+            },
+        }
+        return item
+    
+    def image_item_from_base64(self, image_base64, detail="high"):
+        item = {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/png;base64,{image_base64}", 
+                "detail": detail,
+            },
+        }
+        return item
