@@ -15,6 +15,7 @@ table.py
 main_cli_text-old.py
 main_cli-old.py
 *.sh
+.DS_Store
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
