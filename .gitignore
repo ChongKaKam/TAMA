@@ -1,5 +1,4 @@
 # My strategy
-*.png
 api_keys.yaml
 demo.py
 test.py
