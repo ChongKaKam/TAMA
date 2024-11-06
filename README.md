@@ -1,6 +1,8 @@
 # See it, Think it, Sorted: Large Multimodal Models are Few-shot Time Series Anomaly Analyzers
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) | [![python](https://img.shields.io/badge/Python-3.11-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org) | [![arXiv](https://img.shields.io/badge/arXiv-2411.02465-b31b1b.svg)](https://arxiv.org/abs/2411.02465) 
 
+This is the official implementation of TAMA in the following paper: [See it, Think it, Sorted: Large Multimodal Models are Few-shot Time Series Anomaly Analyzers](https://arxiv.org/abs/2411.02465). 
 
 ![Flow-Chart](imgs/Flow-Chart.png)
 
