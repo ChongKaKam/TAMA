@@ -89,3 +89,7 @@ python3 ablation_eval.py
 The quantitative results across seven datasets:
 
 ![Table8](imgs/Table8.png)
+
+
+> [!TIP]
+> Feel free to explore our other papers in the field of time series! [[Time Series Forecasting]](https://github.com/zhangzw16/SageFormer) [[Time Series Anomaly Detection]](https://github.com/zhangzw16/TADNet)
