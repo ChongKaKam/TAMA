@@ -29,33 +29,19 @@ dataset_name = 'NASA-MSL'
 # stride = dataset_info['stride']
 config = {
     "UCR": {
-        # 'log_root': './log/gpt-4o-mini',
-        # 'log_root': './log/log_nas/anomaly_detection/UCR',
-        # 'log_root': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/',
-        'log_root': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/TextModality',
-        # 'log_root': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/AuxLine-3', 
-        # 'log_root': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/TAMA-3',
+        'log_root': './log/TextModality',
         'data_id_list': ['135','136','137','138'],
     },
     "NASA-MSL": {
-        # 'log_root': './log/log_nas/anomaly_detection/NASA-MSL-All-1',
-        # 'log_root': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/Rotation',
-        # 'log_root': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/TextModality',
-        'log_root': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/text_modality',
+        'log_root': './log/text_modality',
         'data_id_list': ['3', '9', '10', '11', '15', '23', '24'],
     },
     "NormA": {
-        # 'log_root': './log/log_nas/anomaly_detection/NormA-1_4_7_13',
-        'log_root': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/TextModality',
+        'log_root': './log/TextModality',
         'data_id_list': ['1', '4', '7', '13'],
     },
     "NASA-SMAP": {
-        # 'log_root': './log/', 
-        # 'log_root': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/AuxLine-1',
-        'log_root': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/TextModality',
-        # 'log_root': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/TAMA-3',
-        # 'log_root': './log/log_nas/anomaly_detection/NASA-SMAP-2_24_27_37_45',
-        # 'log_root': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/text_modality',
+        'log_root': './log/TextModality',
         'data_id_list': ['2', '24', '27', '37', '45'],
     },
     "synthetic_datasets": {
@@ -63,18 +49,15 @@ config = {
         'data_id_list': ['ecg-frequency-0', 'ecg-frequency-1', 'ecg-frequency-2', 'square-frequency-0'],
     },
     "Dodgers": {
-        # 'log_root': './log/log_nas/anomaly_detection/Dodgers-v2',
-        'log_root': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/TextModality',
+        'log_root': './log/TextModality',
         'data_id_list': ['101-freeway-traffic'],
     },
     "ECG": {
-        # 'log_root': './log/log_nas/anomaly_detection/ECG-v1',
-        'log_root': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/TextModality',
+        'log_root': './log/TextModality',
         'data_id_list': ['CS-MBA-ECG803-data', 'CS-MBA-ECG806-data', 'CS-MBA-ECG820-data', 'RW-MBA-ECG14046-data-12', 'RW-MBA-ECG14046-data-44', 'RW-MBA-ECG803-data', 'WN-MBA-ECG14046-data-12', 'WN-MBA-ECG14046-data-5', 'WN-MBA-ECG803-data'],
     },
     "MSD-1": {
-        # 'log_root': './log/MSD-1-machine-1-1',
-        'log_root': '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/TextModality',
+        'log_root': './log/TextModality',
         'data_id_list': ['machine-1-1-10', 'machine-1-1-11', 'machine-1-1-12', 'machine-1-1-13', 'machine-1-1-14', 'machine-1-1-15', 'machine-1-1-23', 'machine-1-1-25', 'machine-1-1-26', 'machine-1-1-28', 'machine-1-1-32', 'machine-1-1-33', 'machine-1-1-5', 'machine-1-1-6', 'machine-1-1-8', 'machine-1-1-9'],
     },
 }
@@ -159,7 +142,7 @@ def plot_AUC_PR_PAT():
     baseline_info = yaml.safe_load(open('/nas/datasets/ysc/TranAD/Processed_results/Reeval/auc_pr_curves_TimesNet.yaml'))
     save_results = {}
     subtask_name = 'TAMA'
-    processed_data_root = os.path.join('/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/', subtask_name)
+    processed_data_root = os.path.join('./output/', subtask_name)
     for dataset_name in baseline_info:
         if dataset_name == 'SMD' or dataset_name == 'SMD-1':
             dataset_name = 'MSD-1'
@@ -219,13 +202,11 @@ def plot_AUC_PR_PAT():
 def evaluate_metrics():
     dataset_name = 'synthetic_datasets'
     subtask_name = ''
-    processed_data_root = os.path.join('/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output/', subtask_name)
+    processed_data_root = os.path.join('./output/', subtask_name)
     dataset_info = make_dataset.dataset_config[dataset_name]
     window_size = dataset_info['window']
     stride = dataset_info['stride']
-    # stride = 300
     log_path =  config[dataset_name]['log_root']
-    # log_path = '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/synthetic_datasets-all-2'
     print(f'SubTask: {subtask_name}, {dataset_name}, log: {log_path}, stride: {stride}')
     print(f'Processed data root: {processed_data_root}')
     evaluator = Evaluator(dataset_name, stride, processed_data_root, log_root=log_path)
@@ -248,8 +229,8 @@ def fix_log():
     from Datasets.Dataset import ProcessedDataset
     import numpy as np
     dataset_name = 'synthetic_datasets'
-    original_log = yaml.safe_load(open('/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/log_nas/anomaly_detection/synthetic_datasets-all/synthetic_datasets_log_origin.yaml'))
-    processed_data_path = '/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/output'
+    original_log = yaml.safe_load(open('./log/log_nas/anomaly_detection/synthetic_datasets-all/synthetic_datasets_log_origin.yaml'))
+    processed_data_path = './output'
     normal_reference_base = os.path.join(processed_data_path, dataset_name)
     dataset = ProcessedDataset(os.path.join(processed_data_path, dataset_name), mode='test')
     for data_id in original_log:
@@ -259,7 +240,7 @@ def fix_log():
                 labels_index = np.where(labels >= 1)[0].tolist()
                 print(labels_index)
                 original_log[data_id][stride_idx][ch]['labels'] = str(labels_index)
-    with open('/home/zhuangjiaxin/workspace/TensorTSL/TimeLLM/log/log_nas/anomaly_detection/synthetic_datasets-all/synthetic_datasets_log.yaml', 'w') as f:
+    with open('./log/log_nas/anomaly_detection/synthetic_datasets-all/synthetic_datasets_log.yaml', 'w') as f:
         yaml.dump(original_log, f)
 
 def evaluation_with_classification():
